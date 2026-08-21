@@ -264,4 +264,99 @@ public class ProcessExitCodeTests
 
         window.Close();
     });
+
+    // ── The relaunch race ───────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A connection whose reader BLOCKS until it is released, then returns EOF — which is what a real one does
+    /// when a relaunch disposes it out from under a parked read. On Unix the reader wraps a synchronous
+    /// FileStream, so cancellation does not reliably interrupt it: the read returns, and whichever loop was
+    /// sitting in it wakes up holding a connection that may no longer be the live one.
+    /// </summary>
+    private sealed class ParkedUntilReleased : IPtyConnection
+    {
+        private readonly ManualResetEventSlim _release = new(false);
+
+        public ParkedUntilReleased(int realExitCode) => ExitCode = realExitCode;
+
+        /// <summary>Let the parked read return EOF, as a disposed stream would.</summary>
+        public void Release() => _release.Set();
+
+        public int ExitCode { get; }
+
+        public bool WaitForExit(int milliseconds) => true;   // already dead by the time anyone asks
+
+        public Stream ReaderStream => field ??= new BlockingEofStream(_release);
+        public Stream WriterStream { get; } = new MemoryStream();
+
+        public int Pid => -1;
+        public void Kill() { }
+        public void Resize(int columns, int rows) { }
+        public void Dispose() => _release.Set();
+        public event EventHandler<PtyExitedEventArgs>? ProcessExited { add { } remove { } }
+
+        private sealed class BlockingEofStream(ManualResetEventSlim release) : Stream
+        {
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                release.Wait();
+                return 0;   // EOF, exactly as a closed pty master reports
+            }
+
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => 0;
+            public override long Position { get => 0; set { } }
+            public override void Flush() { }
+            public override long Seek(long offset, SeekOrigin origin) => 0;
+            public override void SetLength(long value) { }
+            public override void Write(byte[] buffer, int offset, int count) { }
+        }
+    }
+
+    /// <summary>
+    /// A read loop whose connection was replaced while it was parked must NOT report an exit — not for itself,
+    /// and above all not against its successor.
+    ///
+    /// <para>The window is narrow but entirely reachable, and it is the one Copilot flagged on the upstream PR.
+    /// The loop's ownership test is its <c>while</c> condition, evaluated BEFORE the blocking read. Attaching a
+    /// new connection swaps <c>_ptyConnection</c> and arms a fresh interlock; when the old stream then reports
+    /// EOF the stale loop walks into the exit path, and with a bare <c>Interlocked.Exchange</c> its claim
+    /// SUCCEEDS — because the flag it finds was reset for the new process. The visible result is a
+    /// freshly-started terminal that immediately prints the previous process's exit and reports itself dead.</para>
+    /// </summary>
+    [TestMethod]
+    public void A_Stale_Read_Loop_Cannot_Report_An_Exit_Against_Its_Successor() => HeadlessUi.RunAsync(async () =>
+    {
+        var view = new TerminalView { Process = "" };
+        var window = HeadlessUi.Show(view);
+
+        var reported = new List<int?>();
+        view.ProcessExited += (_, e) => reported.Add(e.ExitCodeKnown ? e.ExitCode : null);
+
+        // First connection: its reader is parked, so its loop is sitting in the read.
+        var first = new ParkedUntilReleased(realExitCode: 3);
+        view.AttachConnection(first);
+        await Task.Delay(150);
+
+        // The relaunch. This arms a fresh interlock for `second`.
+        var second = new ParkedUntilReleased(realExitCode: 0);
+        view.AttachConnection(second);
+        await Task.Delay(50);
+
+        // Now let the FIRST connection's parked read return EOF. Its loop wakes holding a connection the view
+        // no longer owns.
+        first.Release();
+        await Task.Delay(400);
+
+        reported.Should().BeEmpty(
+            "the stale loop's connection is not the live one, so it has no exit to report — and reporting one "
+            + "would both print the wrong process's code and mark the NEW connection as already exited");
+        view.IsLive.Should().BeTrue(
+            "the terminal was just handed a live connection; a stale loop must not be able to kill it");
+
+        second.Release();
+        HeadlessUi.Pump(window);
+    });
 }

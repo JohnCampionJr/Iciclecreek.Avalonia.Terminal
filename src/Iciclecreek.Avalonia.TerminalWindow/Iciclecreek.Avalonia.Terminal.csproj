@@ -40,7 +40,10 @@
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="$(AvaloniaVersion)" />
-    <PackageReference Include="Porta.Pty" Version="1.0.7" />
+    <!-- The PTY package is named by a property so a downstream build can substitute a patched fork
+         without editing this file. Defaults to upstream's, so a plain clone builds exactly as
+         upstream does; see Directory.Build.props. -->
+    <PackageReference Include="$(PtyPackageId)" Version="$(PtyPackageVersion)" />
     <PackageReference Include="Unicode.net" Version="2.0.0" />
     <PackageReference Include="Wcwidth" Version="4.0.1" />
     <PackageReference Include="XTerm.NET" Version="1.0.14" />

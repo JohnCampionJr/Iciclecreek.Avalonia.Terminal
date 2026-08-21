@@ -16,4 +16,16 @@
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- The PTY layer, named by property. These defaults ARE upstream's dependency, so a plain
+         clone of this branch builds and packs exactly as upstream does and nothing here presumes a
+         particular downstream.
+
+         A downstream carrying a patched PTY fork overrides both at pack time. It has to: that fork
+         keeps the Porta.Pty NAMESPACE deliberately, so a graph containing both packages makes every
+         type ambiguous. Substituting rather than adding is the only safe shape. -->
+    <PtyPackageId Condition="'$(PtyPackageId)' == ''">Porta.Pty</PtyPackageId>
+    <PtyPackageVersion Condition="'$(PtyPackageVersion)' == ''">1.0.7</PtyPackageVersion>
+  </PropertyGroup>
+
 </Project>

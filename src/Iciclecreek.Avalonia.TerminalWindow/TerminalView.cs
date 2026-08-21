@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -64,7 +64,23 @@ namespace Iciclecreek.Terminal
         private IPtyConnection? _ptyConnection;
         private CancellationTokenSource? _processCts;
         private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        private int _processExitHandled;    // 0=false, 1=true — written via Interlocked
+        private int _processExitHandled;    // 0=false, 1=true — claimed via TryClaimExit
+
+        /// <summary>
+        /// Guards the PAIR (<see cref="_ptyConnection"/>, <see cref="_processExitHandled"/>). They have to move
+        /// together or a read loop belonging to a DEAD connection can report an exit against a LIVE one.
+        ///
+        /// <para>The window: a loop's ownership check is its <c>while</c> condition, evaluated before a blocking
+        /// read. A relaunch can swap the connection while that read is parked — and on Unix the reader wraps a
+        /// synchronous FileStream, so cancellation does not reliably interrupt it. When the old stream is then
+        /// closed the read returns EOF, and the stale loop walks into the exit path holding a connection nobody
+        /// owns any more. Because the relaunch also RESET the flag for the new process, its claim succeeds: the
+        /// freshly started terminal immediately prints the old process's exit and reports itself not live.</para>
+        ///
+        /// <para>So installing a connection and claiming the right to report an exit are each done under this
+        /// lock, and a claim additionally proves it still owns the connection it is reporting for.</para>
+        /// </summary>
+        private readonly object _exitGate = new();
 
         /// <summary>Ceiling on waiting for an already-exited child to be reaped so its real exit
         /// code is readable. See the EOF branch of <see cref="ReadPtyOutputAsync"/>.</summary>
@@ -2552,11 +2568,31 @@ namespace Iciclecreek.Terminal
 
             _externalConnection = true;
             _processCts = new CancellationTokenSource();
-            Interlocked.Exchange(ref _processExitHandled, 0);
+            // NOT resetting _processExitHandled here: it is armed by InstallConnection below, together with
+            // the connection itself. Resetting early opens a window in which the OUTGOING connection is still
+            // the live one AND the flag is clear, so a stale loop could claim it and leave the incoming
+            // connection installed as already-exited.
 
-            _ptyConnection = connection;
+            // Same ordering as the spawn path: SUBSCRIBE first, then start the reader. An attached
+            // connection may already have a live process behind it, so the window is the same one, and
+            // the previous ordering here left it open — the comment claimed read-first-subscribe-second
+            // while the code did neither reliably, since StartNew only SCHEDULES the reader and the
+            // caller ran on to subscribe immediately.
+            //
+            // No readiness wait here, unlike the spawn path, and that is deliberate rather than an
+            // omission. AttachConnection is synchronous and is called from the UI thread; blocking it
+            // for up to five seconds would freeze the app to protect against losing a few bytes.
+            // Subscribing first removes the part that MATTERS — an exit can no longer be missed — and
+            // what remains is a small window in which very early output could arrive before the reader
+            // thread starts. For an attached connection the caller already owned it, so output from
+            // before the attach was never ours to catch in the first place.
+            InstallConnection(connection);
             connection.ProcessExited += OnPtyProcessExited;
-            _ = Task.Run(async () => await ReadPtyOutputAsync(connection, _processCts.Token), _processCts.Token);
+            _ = Task.Factory.StartNew(
+                () => ReadPtyOutputAsync(connection, _processCts.Token),
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
+                TaskScheduler.Default);
         }
 
         // true while _ptyConnection belongs to an outside owner (see AttachConnection).
@@ -2576,8 +2612,8 @@ namespace Iciclecreek.Terminal
             try
             {
                 _processCts = new CancellationTokenSource();
-                Interlocked.Exchange(ref _processExitHandled, 0);  // Reset flag for new process
-    
+                // The exit interlock is armed by InstallConnection, with the connection — see AttachConnection.
+
                 // Determine the process to launch based on OS if not explicitly set
                 string processToLaunch = Process;
                 if (string.IsNullOrEmpty(processToLaunch))
@@ -2611,14 +2647,44 @@ namespace Iciclecreek.Terminal
                 }
 
                 var spawned = await PtyProvider.SpawnAsync(options, _processCts.Token);
-                _ptyConnection = spawned;
+                InstallConnection(spawned);
 
-                // Subscribe to process exit event for reliable exit detection
+                // Start reading BEFORE subscribing to exit, and do not continue until the loop is
+                // actually reading.
+                //
+                // The process is already running the moment SpawnAsync returns, so every instant
+                // before the first read is a window in which it can write, finish and have its output
+                // discarded. A shell that exits immediately loses EVERYTHING; a shell that lives loses
+                // its opening prompt and banner, which presents as a pane that opened blank.
+                //
+                // Measured in the host that consumes this (Tweed's AppRunService, same Porta.Pty layer
+                // and same ordering): starting 24 short-lived shells at once lost 23 of 24 outputs
+                // entirely, while reporting a clean exit 0. It never reproduced on an idle developer
+                // machine and was near-total on a contended CI box.
+                //
+                // The loop is handed THIS connection so a relaunch cannot redirect it onto the next
+                // one — see ReadPtyOutputAsync. LongRunning because a reader that spends its life
+                // awaiting a stream must not queue behind a saturated thread pool, which is precisely
+                // what starves it when several panes open at once.
+                // Subscribed FIRST, before the reader exists.
+                //
+                // A fast process can exit while the reader thread is still starting, and a
+                // subscription made after that has already happened never hears it — leaving the
+                // terminal reporting a live process forever, because reader EOF is then the only
+                // settle path left and it may not arrive either. Subscribing first costs nothing:
+                // OnPtyProcessExited is idempotent through _processExitHandled.
                 spawned.ProcessExited += OnPtyProcessExited;
 
-                // Start reading from the PTY connection. The loop is handed THIS connection so a
-                // relaunch cannot redirect it onto the next one — see ReadPtyOutputAsync.
-                _ = Task.Run(async () => await ReadPtyOutputAsync(spawned, _processCts.Token), _processCts.Token);
+                var readerUp = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _ = Task.Factory.StartNew(
+                    () => ReadPtyOutputAsync(spawned, _processCts.Token, readerUp),
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
+                    TaskScheduler.Default);
+
+                // Bounded and never fatal: if the reader cannot start, the terminal behaves exactly as
+                // it used to rather than hanging the caller that opened it.
+                await Task.WhenAny(readerUp.Task, Task.Delay(TimeSpan.FromSeconds(5))).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -2653,8 +2719,22 @@ namespace Iciclecreek.Terminal
         /// LaunchProcess had just reset for it. Holding the reference makes a stale loop stale in
         /// the only way that is safe, which is entirely.
         /// </param>
-        private async Task ReadPtyOutputAsync(IPtyConnection connection, CancellationToken cancellationToken)
+        private async Task ReadPtyOutputAsync(
+            IPtyConnection connection, CancellationToken cancellationToken, TaskCompletionSource? up = null)
         {
+            // Raised BEFORE the first read, and deliberately not after one.
+            //
+            // Signalling after a read would make readiness depend on the process PRODUCING output, so
+            // a shell that prints nothing on startup would never signal and every launch would pay the
+            // full five-second wait. The guarantee wanted is that the loop is running and the next
+            // thing it does is read.
+            //
+            // The window this leaves — between the signal and the read — is closed by the CALLER
+            // subscribing to ProcessExited before starting this loop, so an exit landing in that
+            // window is still seen. Doing it the other way round is what the earlier version of this
+            // change got wrong.
+            up?.TrySetResult();
+
             try
             {
                 var buffer = new byte[0x40000];
@@ -2669,7 +2749,24 @@ namespace Iciclecreek.Terminal
                 // the new one's terminal. Null-checking only catches teardown, not replacement.
                 while (!cancellationToken.IsCancellationRequested && ReferenceEquals(_ptyConnection, connection))
                 {
-                    var bytesRead = await connection.ReaderStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
+                    // SYNCHRONOUS, on the thread StartNew handed this loop. `await ReadAsync` here
+                    // undid the LongRunning hint entirely: LongRunning owns a dedicated thread only
+                    // up to the first await that YIELDS, and every continuation after that is
+                    // scheduled on the THREAD POOL. Worse, the stream underneath is a FileStream
+                    // opened isAsync: false on Windows, whose ReadAsync performs no overlapped I/O —
+                    // it parks a POOL thread in a blocking read, for the whole life of the process,
+                    // because ConPTY does not signal EOF while the pseudoconsole is open.
+                    //
+                    // Measured downstream in Tweed's equivalent loop, 24 concurrent short-lived
+                    // processes on a 4-vCPU box: time-to-first-output was 137 ms with a dedicated
+                    // thread and 7546 ms pooled, and under load the pooled form lost output entirely
+                    // rather than merely delaying it. A blocking read on a thread we own cannot be
+                    // starved, and costs one thread per terminal — which the pooled form was already
+                    // costing, minus the scheduling.
+                    //
+                    // Cancellation is by teardown rather than by token: disposing the connection
+                    // closes the stream and the blocking read throws, which the catch below handles.
+                    var bytesRead = connection.ReaderStream.Read(buffer, 0, buffer.Length);
                     if (bytesRead == 0)
                     {
                         // Process has exited — fallback in case OnPtyProcessExited didn't fire first.
@@ -2709,7 +2806,10 @@ namespace Iciclecreek.Terminal
                             ReapInBackground(connection);
                         }
 
-                        if (reaped && Interlocked.Exchange(ref _processExitHandled, 1) == 0)
+                        // TryClaimExit, not a bare interlock: this loop may have been parked in a blocking
+                        // read while a relaunch replaced the connection, in which case the exit it is holding
+                        // belongs to a process the view has already moved on from.
+                        if (reaped && TryClaimExit(connection))
                         {
                             var exitCode = connection.ExitCode;
 
@@ -2850,7 +2950,13 @@ namespace Iciclecreek.Terminal
 
                 while (DateTime.UtcNow < deadline)
                 {
-                    if (Volatile.Read(ref _processExitHandled) != 0) return;   // someone else reported it
+                    // Someone else reported it — or this connection is no longer the live one, which makes
+                    // the exit moot AND makes reporting it actively wrong.
+                    if (Volatile.Read(ref _processExitHandled) != 0) return;
+                    lock (_exitGate)
+                    {
+                        if (!ReferenceEquals(_ptyConnection, connection)) return;
+                    }
                     try
                     {
                         if (connection.WaitForExit(ExitReapPollMs)) { reaped = true; break; }
@@ -2862,7 +2968,7 @@ namespace Iciclecreek.Terminal
                     await Task.Yield();
                 }
 
-                if (Interlocked.Exchange(ref _processExitHandled, 1) != 0) return;
+                if (!TryClaimExit(connection)) return;
 
                 int? code = null;
                 if (reaped)
@@ -2888,10 +2994,39 @@ namespace Iciclecreek.Terminal
             });
         }
 
+        /// <summary>
+        /// Make <paramref name="connection"/> the live one and arm the exit interlock for it, atomically.
+        /// Null clears both — the teardown case.
+        /// </summary>
+        private void InstallConnection(IPtyConnection? connection)
+        {
+            lock (_exitGate)
+            {
+                _ptyConnection = connection;
+                Interlocked.Exchange(ref _processExitHandled, 0);
+            }
+        }
+
+        /// <summary>
+        /// Claim the right to report the exit OF THIS CONNECTION. False when somebody already reported it, and
+        /// false when the connection is no longer the live one — a stale loop must not speak for its successor.
+        /// </summary>
+        private bool TryClaimExit(IPtyConnection connection)
+        {
+            lock (_exitGate)
+            {
+                if (!ReferenceEquals(_ptyConnection, connection)) return false;
+                return Interlocked.Exchange(ref _processExitHandled, 1) == 0;
+            }
+        }
+
         private void OnPtyProcessExited(object? sender, PtyExitedEventArgs e)
         {
-            // Interlocked ensures only one of (event, EOF path, exception path) prints the message.
-            if (Interlocked.Exchange(ref _processExitHandled, 1) != 0)
+            // Only one of (event, EOF path, exception path) prints the message — and only for the connection
+            // that is actually live. `sender` is the connection that exited; a null one predates this and is
+            // treated as the live one rather than dropped.
+            if (sender is IPtyConnection origin ? !TryClaimExit(origin)
+                                                : Interlocked.Exchange(ref _processExitHandled, 1) != 0)
                 return;
 
             lock (_terminalLock)
@@ -2936,7 +3071,9 @@ namespace Iciclecreek.Terminal
                 }
                 finally
                 {
-                    _ptyConnection = null;
+                    // Under the gate with the flag: a loop still unwinding must not find a null connection
+                    // paired with a clear flag and decide it owns the exit.
+                    InstallConnection(null);
                 }
             }
 
