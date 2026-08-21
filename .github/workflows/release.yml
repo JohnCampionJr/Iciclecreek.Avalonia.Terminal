@@ -63,9 +63,24 @@ jobs:
       # to upstream's, so a plain clone builds exactly as upstream does; the swap belongs here.
       #
       # Keep these properties in step with avalloy's build/dev-link.cs, the other place they exist.
+      # BUILD then PACK, not one shot: overriding AssemblyName changes the file the build produces, and
+      # GeneratePackageOnBuild packs during that same build, before the rename lands — NU5026, "the
+      # file Avalloy.Terminal.dll to be packed was not found on disk". Same trap as dev-link's.
+      - name: Build
+        run: |
+          dotnet build src/Iciclecreek.Avalonia.TerminalWindow/*.csproj \
+            --configuration Release \
+            -p:PackageId=${{ env.PACKAGE_ID }} \
+            -p:AssemblyName=${{ env.PACKAGE_ID }} \
+            -p:Version=${{ steps.v.outputs.version }} \
+            -p:PtyPackageId=${{ env.PTY_PACKAGE_ID }} \
+            -p:PtyPackageVersion=${{ steps.v.outputs.pty }} \
+            -p:GeneratePackageOnBuild=false
+
       - name: Pack
         run: |
           dotnet pack src/Iciclecreek.Avalonia.TerminalWindow/*.csproj \
+            --no-build \
             --configuration Release \
             --output artifacts \
             -p:PackageId=${{ env.PACKAGE_ID }} \
