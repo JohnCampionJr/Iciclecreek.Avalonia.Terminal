@@ -55,7 +55,9 @@ jobs:
           dotnet-version: '10.x'
 
       - name: Test
-        run: dotnet test tests/Iciclecreek.Avalonia.Terminal.Tests/*.csproj --configuration Release
+        run: |
+          dotnet test tests/Iciclecreek.Avalonia.Terminal.Tests/*.csproj --configuration Release \
+            -p:RestoreAdditionalProjectSources=${{ env.FEED }}
 
       # PtyPackageId is a SUBSTITUTION, not an addition. This fork keeps upstream's Porta.Pty
       # namespace, so a consumer graph containing both the upstream package and ours has every type
@@ -66,10 +68,16 @@ jobs:
       # BUILD then PACK, not one shot: overriding AssemblyName changes the file the build produces, and
       # GeneratePackageOnBuild packs during that same build, before the rename lands — NU5026, "the
       # file Avalloy.Terminal.dll to be packed was not found on disk". Same trap as dev-link's.
+      # The feed arrives as RestoreAdditionalProjectSources, an MSBuild PROPERTY, not a committed
+      # NuGet.config — this tree stays upstream-shaped, and a clone of it must restore from nuget.org
+      # alone. Without it the build dies NU1101 "no packages exist with this id in source(s):
+      # nuget.org", because the substituted PTY dependency only exists on our feed. Read-only, so no
+      # credential is involved; the push later is the only authenticated step.
       - name: Build
         run: |
           dotnet build src/Iciclecreek.Avalonia.TerminalWindow/*.csproj \
             --configuration Release \
+            -p:RestoreAdditionalProjectSources=${{ env.FEED }} \
             -p:PackageId=${{ env.PACKAGE_ID }} \
             -p:AssemblyName=${{ env.PACKAGE_ID }} \
             -p:Version=${{ steps.v.outputs.version }} \
@@ -81,6 +89,7 @@ jobs:
         run: |
           dotnet pack src/Iciclecreek.Avalonia.TerminalWindow/*.csproj \
             --no-build \
+            -p:RestoreAdditionalProjectSources=${{ env.FEED }} \
             --configuration Release \
             --output artifacts \
             -p:PackageId=${{ env.PACKAGE_ID }} \
