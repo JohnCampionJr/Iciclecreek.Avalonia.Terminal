@@ -1,0 +1,106 @@
+# Publishes this fork as Avalloy.Terminal.
+#
+# Lives on `patches` and only ever runs there. `main` is a pristine mirror of upstream and every PR
+# branch is cut from it, so a file that exists only here cannot reach a PR back to upstream. It is
+# also the only place the downstream package identity is allowed to appear.
+name: Release
+
+# Triggered by a TAG, not workflow_dispatch: dispatch requires the workflow to live on the DEFAULT
+# branch, and the default here is `main`, the pristine upstream mirror this file must never touch.
+#
+#   git tag dryrun/2.0.4 && git push origin dryrun/2.0.4    # build, verify, upload — no push
+#   git tag release/2.0.4 && git push origin release/2.0.4  # the same, then publish
+on:
+  push:
+    tags:
+      - 'release/*'
+      - 'dryrun/*'
+
+permissions:
+  contents: read
+
+env:
+  PACKAGE_ID: Avalloy.Terminal
+  PTY_PACKAGE_ID: Avalloy.PortaPty
+  FEED: https://nuget.cloudsmith.io/jcamp/packages/v3/index.json
+
+jobs:
+  publish:
+    name: pack and push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Version comes from the tag; the PTY pin is committed beside this file so it moves with the
+      # branch and shows up in review. The tag must sit on the maintained line — tagging `main` would
+      # publish UPSTREAM's code under our package id, and nothing would look wrong afterwards.
+      - name: Read the tag and check it is on patches
+        id: v
+        run: |
+          version="${GITHUB_REF_NAME#*/}"
+          [ -n "$version" ] || { echo "::error::tag '$GITHUB_REF_NAME' carries no version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          . .github/release-pins.env
+          [ -n "$PTY_VERSION" ] || { echo "::error::PTY_VERSION missing from .github/release-pins.env"; exit 1; }
+          echo "pty=$PTY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "version $version, depending on ${{ env.PTY_PACKAGE_ID }} $PTY_VERSION"
+          git fetch --quiet origin patches
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/patches \
+            || { echo "::error::$GITHUB_SHA is not on patches — refusing to publish"; exit 1; }
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Test
+        run: dotnet test tests/Iciclecreek.Avalonia.Terminal.Tests/*.csproj --configuration Release
+
+      # PtyPackageId is a SUBSTITUTION, not an addition. This fork keeps upstream's Porta.Pty
+      # namespace, so a consumer graph containing both the upstream package and ours has every type
+      # declared twice and nothing compiles. The branch names the dependency by property and defaults
+      # to upstream's, so a plain clone builds exactly as upstream does; the swap belongs here.
+      #
+      # Keep these properties in step with avalloy's build/dev-link.cs, the other place they exist.
+      - name: Pack
+        run: |
+          dotnet pack src/Iciclecreek.Avalonia.TerminalWindow/*.csproj \
+            --configuration Release \
+            --output artifacts \
+            -p:PackageId=${{ env.PACKAGE_ID }} \
+            -p:AssemblyName=${{ env.PACKAGE_ID }} \
+            -p:Version=${{ steps.v.outputs.version }} \
+            -p:PtyPackageId=${{ env.PTY_PACKAGE_ID }} \
+            -p:PtyPackageVersion=${{ steps.v.outputs.pty }}
+
+      # Assert on what landed in the zip. The dependency check is the one that matters: if the
+      # substitution silently did not apply, the package pulls upstream Porta.Pty in alongside ours
+      # and every type in the consumer becomes ambiguous.
+      - name: Verify the package contents
+        run: |
+          pkg=artifacts/${{ env.PACKAGE_ID }}.${{ steps.v.outputs.version }}.nupkg
+          [ -f "$pkg" ] || { echo "::error::$pkg not produced"; exit 1; }
+          mkdir -p _x && cd _x && unzip -qo "../$pkg"
+          echo "dependencies:"; grep -oE '<dependency id="[^"]*" version="[^"]*"' *.nuspec | sed 's/^/  /'
+          grep -q "<dependency id=\"${{ env.PTY_PACKAGE_ID }}\"" *.nuspec \
+            || { echo "::error::does not depend on ${{ env.PTY_PACKAGE_ID }} — the substitution did not apply"; exit 1; }
+          if grep -q '<dependency id="Porta.Pty"' *.nuspec; then
+            echo "::error::depends on UPSTREAM Porta.Pty; both PTY packages in one graph makes every type ambiguous"; exit 1
+          fi
+          ls lib/*/${{ env.PACKAGE_ID }}.dll >/dev/null \
+            || { echo "::error::packaged assembly is not ${{ env.PACKAGE_ID }}.dll"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_ID }}.${{ steps.v.outputs.version }}
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+
+      - name: Push to Cloudsmith
+        if: startsWith(github.ref_name, 'release/')
+        run: |
+          dotnet nuget push "artifacts/${{ env.PACKAGE_ID }}.${{ steps.v.outputs.version }}.nupkg" \
+            --source "${{ env.FEED }}" \
+            --api-key "${{ secrets.NUGET_API_KEY }}" \
+            --skip-duplicate
