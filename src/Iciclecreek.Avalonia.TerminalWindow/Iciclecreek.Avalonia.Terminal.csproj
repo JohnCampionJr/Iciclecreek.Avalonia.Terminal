@@ -1,9 +1,16 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <AssemblyName>Iciclecreek.Terminal</AssemblyName>
     <RootNamespace>Iciclecreek.Terminal</RootNamespace>
     <IsPackable>true</IsPackable>
+
+    <!-- Version lives here, matching upstream's convention, and continues upstream's line rather
+         than starting a new one: this branch IS upstream plus a patch set, so a number below theirs
+         would claim to be older than the code it contains. The release tooling applies the package
+         identity at pack time; only the number is committed. -->
+    <Version>2.0.4</Version>
+    <AssemblyVersion>2.0.4.0</AssemblyVersion>
     <!-- XML docs ride along: this is consumed as a compiled reference, so the doc comments
          explaining the seams are the only design notes a consumer ever sees. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

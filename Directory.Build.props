@@ -11,8 +11,8 @@
     <!-- Off by default so the demos can never accidentally ship; the library switches it on. -->
     <IsPackable>false</IsPackable>
 
-    <!-- Upstream is on Avalonia 11.1; this line needs 12.x. That is the one dependency difference
-         between the two, and the reason a straight merge of src/Directory.Build.props conflicts. -->
+    <!-- Upstream's library pins Avalonia 12.0.2 directly; this line takes 12.1.0. The 11.1.0 in
+         upstream's src/Directory.Build.props is stale and unused by the library. -->
     <AvaloniaVersion>12.1.0</AvaloniaVersion>
   </PropertyGroup>
 
