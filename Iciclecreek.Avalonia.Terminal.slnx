@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="src/Demo.Desktop/Demo.Desktop.csproj" />
+  <Project Path="src/Demo/Demo.csproj" />
+  <Project Path="src/Example/Example.csproj" />
+  <Project Path="src/Iciclecreek.Terminal/Iciclecreek.Avalonia.Terminal.csproj" />
+  <Project Path="tests/Iciclecreek.Terminal.Tests/Iciclecreek.Terminal.Tests.csproj" />
+</Solution>

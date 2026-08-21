@@ -1,0 +1,19 @@
+<Project>
+
+  <!-- Technical defaults only. Deliberately carries no package metadata, no version and no
+       packaging: this branch is kept close to upstream so merges stay cheap, and the package
+       identity is applied by the release tooling at pack time rather than committed here. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+
+    <!-- Off by default so the demos can never accidentally ship; the library switches it on. -->
+    <IsPackable>false</IsPackable>
+
+    <!-- Upstream is on Avalonia 11.1; this line needs 12.x. That is the one dependency difference
+         between the two, and the reason a straight merge of src/Directory.Build.props conflicts. -->
+    <AvaloniaVersion>12.1.0</AvaloniaVersion>
+  </PropertyGroup>
+
+</Project>

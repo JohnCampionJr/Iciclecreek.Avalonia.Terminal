@@ -1,35 +1,36 @@
-name: BuildAndRunTests
+name: Build and test
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-    - src/**
+    branches: [main, patches]
   pull_request:
-    branches: [ "main" ]
-    paths:
-    - src/**
-    
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-    - name: Checkout Iciclecreek.Avalonia.TerminalWindow.slnx
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: 10.0.x
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
 
-    - name: Restore dependencies
-      run: dotnet restore src/Iciclecreek.Avalonia.TerminalWindow.slnx
+      - name: Build
+        run: dotnet build src/Iciclecreek.Avalonia.TerminalWindow/Iciclecreek.Avalonia.Terminal.csproj -c Release
 
-    - name: Build
-      run: dotnet build --no-restore src/Iciclecreek.Avalonia.TerminalWindow.slnx --property WarningLevel=0
-      
-    - name: Test
-      run: dotnet test --no-build --verbosity normal src/Iciclecreek.Avalonia.TerminalWindow.slnx
+      # The suite is headless Avalonia; it needs a display server on Linux.
+      - name: Test
+        run: dotnet test tests/Iciclecreek.Avalonia.Terminal.Tests/Iciclecreek.Avalonia.Terminal.Tests.csproj -c Release

@@ -1,11 +1,28 @@
-# Iciclecreek.Avalonia.Terminal For Avalonia 12.x
-![Terminal Demo](https://raw.githubusercontent.com/tomlm/Iciclecreek.Avalonia.Terminal/main/terminal.gif)
+# Iciclecreek.Terminal
+
+**Fork of [tomlm/Iciclecreek.Avalonia.Terminal](https://github.com/tomlm/Iciclecreek.Avalonia.Terminal),
+substantially modified.** Original work Copyright (c) 2025 Tom Laird-McConnell, MIT licensed; see
+[LICENSE](LICENSE). This fork remains MIT.
 
 A cross-platform XTerm terminal emulator control for [Avalonia UI](https://avaloniaui.net/) applications.
 
-![Build Status](https://github.com/tomlm/Iciclecreek.Avalonia.TerminalWindow/actions/workflows/BuildAndRunTests.yml/badge.svg)
-![NuGet](https://img.shields.io/nuget/v/Iciclecreek.Avalonia.Terminal)
+![Terminal Demo](terminal.gif)
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+Published to a private feed, not nuget.org.
+
+## What this fork changes
+
+- `ICustomHitTest` so the whole view is an input surface (wheel events over blank space)
+- fractional wheel-delta accumulation, so trackpads scroll
+- the tail is followed only when the view is already on it, with scrollback-trim tracking
+- keyboard buffer selection (Shift+arrows), word motion (Alt/Ctrl+arrows), platform paste chords
+- inverse video without requiring an opaque `Background`
+- host integration: `ShellReady`, `OutputReceived`, `AttachConnection`, `EnvironmentOverrides`,
+  `SuppressCursor`, `Refresh()`, and the dormant-view primitives
+
+Generic fixes are offered back upstream where they apply.
 
 
 ## Introduction

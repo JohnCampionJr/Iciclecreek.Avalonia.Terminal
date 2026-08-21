@@ -1,3 +1,3 @@
-﻿using Avalonia.Metadata;
+using Avalonia.Metadata;
 
-[assembly: XmlnsDefinition("https://github.com/tomlm/Terminal", "Iciclecreek.Terminal")]
+[assembly: XmlnsDefinition("https://github.com/tomlm/Iciclecreek.Avalonia.Terminal", "Iciclecreek.Terminal")]

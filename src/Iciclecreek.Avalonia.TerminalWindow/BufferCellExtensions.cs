@@ -1,8 +1,8 @@
-﻿using Avalonia.Media;
+using Avalonia.Media;
 using System;
 using XTerm.Buffer;
 
-namespace Iciclecreek.Avalonia.Terminal
+namespace Iciclecreek.Terminal
 {
     public static class BufferCellExtensions
     {

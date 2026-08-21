@@ -8,7 +8,6 @@ using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Rendering;
 using Avalonia.Threading;
-using Iciclecreek.Avalonia.Terminal;
 using Porta.Pty;
 using System;
 using System.Collections.Generic;
@@ -66,6 +65,18 @@ namespace Iciclecreek.Terminal
         private CancellationTokenSource? _processCts;
         private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         private int _processExitHandled;    // 0=false, 1=true — written via Interlocked
+
+        /// <summary>Ceiling on waiting for an already-exited child to be reaped so its real exit
+        /// code is readable. See the EOF branch of <see cref="ReadPtyOutputAsync"/>.</summary>
+        private const int ExitReapGraceMs = 1000;
+
+        /// <summary>Ceiling on the OFF-read-loop wait for a child that missed the grace period. A
+        /// dead child reaps in microseconds; this only runs when something pathological is going on,
+        /// and it exists so that case ends in a report rather than in silence.</summary>
+        private const int ExitReapCeilingMs = 30_000;
+
+        /// <summary>Poll slice for that wait. Short enough to report promptly, long enough not to spin.</summary>
+        private const int ExitReapPollMs = 100;
         private readonly object _terminalLock = new object(); // Serialises all _terminal.Write/WriteLine calls
 
         // Cursor blinking
@@ -78,6 +89,29 @@ namespace Iciclecreek.Terminal
         // Selection start is deferred until pointer movement so that a plain click doesn't show a caret.
         private (int Col, int Row)? _pendingSelectionStart = null;
 
+        // Keyboard selection. Both are CARET BOUNDARY ordinals — `row * Cols + col` counting
+        // the gaps between cells, not the cells themselves — so Shift+Right from a fresh cursor selects
+        // exactly one cell instead of two. Null anchor = no keyboard selection in flight.
+        private int? _kbSelAnchor;
+        private int _kbSelFocus;
+
+        // Wheel accumulator. A notched mouse delivers Delta.Y = ±1 per detent, but a trackpad
+        // (and a precision mouse) delivers a stream of FRACTIONS — on macOS a slow two-finger drag is dozens
+        // of ~0.05 events. Upstream truncated each event to an int on its own, so every one of those rounded
+        // to zero lines and the terminal simply refused to scroll until the user flicked hard enough to clear
+        // a whole line in a single event. Carry the remainder across events instead.
+        private double _wheelResidual;      // local scrollback path
+        private double _wheelResidualApp;   // mouse-reporting path (alt-buffer apps: less, vim, htop)
+
+        // Tail-following. True while the view sits at the bottom of the buffer, which is the
+        // only state in which new output should drag the viewport along. Scrolling back clears it; scrolling
+        // (or typing) back down to the tail sets it again.
+        private bool _followBottom = true;
+
+        // Styled properties are UI-thread-only, so AutoScrollToBottom is mirrored into a volatile field
+        // the PTY read task can read. Kept in step by OnPropertyChanged.
+        private volatile bool _autoScroll = true;
+
         // IME (Input Method Editor) support
         private TerminalInputMethodClient? _inputMethodClient;
 
@@ -88,7 +122,9 @@ namespace Iciclecreek.Terminal
         // survives a visual-tree re-parent (e.g. floating window pop-out/dock-back).
         private bool _suppressCleanupOnDetach;
 
-        private sealed record CachedTextRun(FormattedText Text, int StartX, int CellCount, IBrush Background);
+        // Background is null for a run that keeps the terminal's own default background — nothing is
+        // painted for it, so a host that layers the view over its own themed surface still shows through.
+        private sealed record CachedTextRun(FormattedText Text, int StartX, int CellCount, IBrush? Background);
 
         public static readonly DirectProperty<TerminalView, bool> IsAlternateBufferProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, bool>(
@@ -198,6 +234,22 @@ namespace Iciclecreek.Terminal
                 defaultValue: 530);
 
         /// <summary>
+        /// When <see langword="true"/> (default), the terminal automatically scrolls to
+        /// the bottom when new output arrives. The user can still scroll up manually;
+        /// auto-scroll resumes when the user types or scrolls back to the bottom.
+        /// </summary>
+        public static readonly StyledProperty<bool> AutoScrollToBottomProperty =
+            AvaloniaProperty.Register<TerminalView, bool>(
+                nameof(AutoScrollToBottom),
+                defaultValue: true);
+
+        public bool AutoScrollToBottom
+        {
+            get => GetValue(AutoScrollToBottomProperty);
+            set => SetValue(AutoScrollToBottomProperty, value);
+        }
+
+        /// <summary>
         /// When <see langword="false"/> (default), a plain single left-click does not
         /// immediately show a selection highlight. The selection only starts once the
         /// pointer moves, so casual clicks produce no visible caret artifact.
@@ -214,6 +266,24 @@ namespace Iciclecreek.Terminal
         {
             get => GetValue(ShowCaretOnClickProperty);
             set => SetValue(ShowCaretOnClickProperty, value);
+        }
+
+        /// <summary>
+        /// Hold the cursor back even when a process IS attached. Between spawning a shell and
+        /// its first byte of output the buffer is still empty, so the cursor paints at (0,0) — which is
+        /// wrong wherever the host layers something over the view during that window: an overlay drawing
+        /// its own caret would leave the shell's stranded in the corner beneath it. Clear it once the shell
+        /// has painted — <see cref="ShellReady"/> is the signal.
+        /// </summary>
+        public static readonly StyledProperty<bool> SuppressCursorProperty =
+            AvaloniaProperty.Register<TerminalView, bool>(
+                nameof(SuppressCursor),
+                defaultValue: false);
+
+        public bool SuppressCursor
+        {
+            get => GetValue(SuppressCursorProperty);
+            set => SetValue(SuppressCursorProperty, value);
         }
 
         public static readonly StyledProperty<XTerm.Options.TerminalOptions?> OptionsProperty =
@@ -358,6 +428,13 @@ namespace Iciclecreek.Terminal
         public event EventHandler<ProcessExitedEventArgs>? ProcessExited;
 
         /// <summary>
+        /// Raised for every decoded PTY output chunk, on the background read task (marshal to the UI
+        /// thread yourself). Lets hosts sniff process output (e.g. dev-server "listening on :port"
+        /// lines) without touching the terminal buffer.
+        /// </summary>
+        public event EventHandler<string>? OutputReceived;
+
+        /// <summary>
         /// Event raised when a URL in the terminal is Ctrl+Clicked.
         /// </summary>
         public event EventHandler<UrlClickedEventArgs>? UrlClicked;
@@ -434,7 +511,8 @@ namespace Iciclecreek.Terminal
                 ViewportYProperty,
                 CursorColorProperty,
                 CursorStyleProperty,
-                CursorBlinkProperty);
+                CursorBlinkProperty,
+                SuppressCursorProperty);   // toggling it must repaint immediately
 
             AffectsMeasure<TerminalView>(
                 FontFamilyProperty,
@@ -473,6 +551,12 @@ namespace Iciclecreek.Terminal
             }
 
             _terminal = new XT.Terminal(options);
+
+            // the normal buffer's ring evicts its oldest lines once the scrollback fills, and
+            // every absolute line index shifts down with it. A view parked up in the scrollback has to move
+            // with the eviction or the content slides upward under the user while output keeps arriving.
+            // The buffer object outlives detach/re-attach, so this is subscribed once and never dropped.
+            _terminal.Buffer.Trimmed += OnBufferTrimmed;
 
             _terminal.DataReceived += OnTerminalDataReceived;
             _terminal.BufferChanged += OnTerminalBufferChanged;
@@ -575,6 +659,77 @@ namespace Iciclecreek.Terminal
         public void WaitForExit(int ms) => _ptyConnection?.WaitForExit(ms);
 
         public void Kill() => _ptyConnection?.Kill();
+
+        /// <summary>
+        /// Extra environment variables for the spawned process, applied on top of the inherited
+        /// environment (Porta.Pty seeds the child from this process's environment, then merges these over it;
+        /// an empty value REMOVES a variable). Read at launch, so set it before calling
+        /// <see cref="LaunchProcess()"/>. Useful for scoping shell history per session (ZDOTDIR for zsh,
+        /// HISTFILE for bash, fish_history for fish).
+        /// Named EnvironmentOverrides, not Environment, so it doesn't shadow <see cref="System.Environment"/>
+        /// inside this class.
+        /// </summary>
+        public IReadOnlyDictionary<string, string>? EnvironmentOverrides { get; set; }
+
+        /// <summary>
+        /// True while a PTY is attached and its process has not been reaped — the dormant/live
+        /// distinction a host wrapper draws. A view that has never launched, or whose process exited, is false.
+        /// </summary>
+        public bool IsLive => _ptyConnection != null && Volatile.Read(ref _processExitHandled) == 0;
+
+        /// <summary>
+        /// Write straight to the PTY. A dormant view can buffer the keystroke that woke it and replay it
+        /// here once the shell is up, so the character the user typed is never dropped.
+        /// No-op when nothing is attached.
+        /// </summary>
+        public Task SendAsync(string text, CancellationToken ct = default)
+            => _ptyConnection == null || string.IsNullOrEmpty(text)
+                ? Task.CompletedTask
+                : SendToPtyAsync(text, ct);
+
+        /// <summary>
+        /// Wipe the screen AND the scrollback back to an empty buffer, via the parser's own
+        /// erase sequences. Call it when a session returns to dormant, so the sleeping view is genuinely
+        /// blank behind whatever stand-in the host draws, instead of showing the dead output of the process
+        /// that just exited underneath it.
+        /// No-op before <see cref="OnInitialized"/> has run — a pooled view that was never attached has no
+        /// buffer to wipe, and a host posting this at Background priority can land the job on a view that
+        /// has since been detached (or was never realised at all).
+        /// </summary>
+        public void ClearScreen()
+        {
+            if (_terminal == null) return;
+
+            lock (_terminalLock)
+            {
+                _terminal.Write("\u001b[H\u001b[2J\u001b[3J");   // home · erase screen · erase scrollback
+                _terminal.Buffer.ScrollToBottom();
+            }
+            this.RequestInvalidate();
+        }
+
+        /// <summary>
+        /// The text of the row the cursor sits on, trailing blanks trimmed. Read it as a session goes
+        /// dormant so the sleeping view can show the shell's REAL last prompt instead of a synthesized one.
+        /// </summary>
+        public string CurrentLineText
+        {
+            get
+            {
+                try
+                {
+                    var buffer = _terminal.Buffer;
+                    var line = buffer.GetLine(buffer.YBase + buffer.Y);
+                    if (line == null) return string.Empty;
+
+                    var sb = new StringBuilder();
+                    for (int x = 0; x < line.Length; x++)
+                        sb.Append(string.IsNullOrEmpty(line[x].Content) ? " " : line[x].Content);
+                    return sb.ToString().TrimEnd();
+                }
+                catch { return string.Empty; }
+            }
+        }
 
         /// <summary>
         /// Pastes text from the clipboard into the terminal.
@@ -813,6 +968,10 @@ namespace Iciclecreek.Terminal
                     _cursorBlinkOn = true;  // Reset to visible when blinking stops
                 }
             }
+            else if (change.Property == AutoScrollToBottomProperty)
+            {
+                _autoScroll = (bool)change.NewValue!;
+            }
             else if (change.Property == CursorBlinkRateProperty)
             {
                 var rate = (int)change.NewValue!;
@@ -858,6 +1017,15 @@ namespace Iciclecreek.Terminal
         protected override void OnDetachedFromLogicalTree(LogicalTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromLogicalTree(e);
+
+            // _terminal can be null if the view is detached before OnInitialized ran
+            // (e.g. window closing during shutdown). Mirror the guard in OnAttachedToLogicalTree.
+            if (_terminal == null)
+            {
+                if (!_suppressCleanupOnDetach)
+                    CleanupProcess();
+                return;
+            }
 
             _terminal.DataReceived -= OnTerminalDataReceived;
             _terminal.BufferChanged -= OnTerminalBufferChanged;
@@ -946,14 +1114,16 @@ namespace Iciclecreek.Terminal
         private static readonly bool IsMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
         // True when the key is a modifier pressed on its own (no associated character),
-        // e.g. the ⌘/Ctrl/Shift/Alt keys. Used so a bare modifier press doesn't clear
-        // an active selection before the rest of a copy shortcut is typed.
+        // e.g. the ⌘/Ctrl/Shift/Alt keys. Used so a bare modifier press doesn't clear an active
+        // selection before the rest of a copy shortcut is typed, and so it doesn't count as
+        // "the user typed something" for tail-following. CapsLock added by the fork.
         private static bool IsModifierKey(Key key) => key switch
         {
             Key.LeftShift or Key.RightShift or
             Key.LeftCtrl or Key.RightCtrl or
             Key.LeftAlt or Key.RightAlt or
-            Key.LWin or Key.RWin => true,
+            Key.LWin or Key.RWin or
+            Key.CapsLock => true,
             _ => false,
         };
 
@@ -1000,34 +1170,6 @@ namespace Iciclecreek.Terminal
 
             try
             {
-                // macOS clipboard shortcuts use the Command (Meta) key. These don't collide
-                // with terminal control codes (SIGINT is Ctrl+C, not Cmd+C), so we can handle
-                // them directly here. On Windows/Linux this block is skipped and the
-                // Ctrl / Ctrl+Shift shortcuts below are used instead.
-                if (IsMacOS && e.KeyModifiers == KeyModifiers.Meta)
-                {
-                    // Cmd+C - copy the selection (no-op when nothing is selected, matching macOS)
-                    if (e.Key == Key.C)
-                    {
-                        e.Handled = true;
-                        if (_terminal.Selection.HasSelection)
-                        {
-                            await CopyAsync();
-                            _terminal.Selection.ClearSelection();
-                            this.RequestInvalidate();
-                        }
-                        return;
-                    }
-
-                    // Cmd+V - paste from the clipboard
-                    if (e.Key == Key.V)
-                    {
-                        e.Handled = true;
-                        await PasteAsync();
-                        return;
-                    }
-                }
-
                 // Handle Ctrl+C - copy if there's a selection, otherwise send SIGINT
                 if (e.Key == Key.C && e.KeyModifiers == KeyModifiers.Control)
                 {
@@ -1042,8 +1184,9 @@ namespace Iciclecreek.Terminal
                     // No selection - fall through to send Ctrl+C (SIGINT) to the process
                 }
 
-                // Handle Ctrl+Shift+C for copy (always copies, doesn't send SIGINT)
-                if (e.Key == Key.C && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+                // Handle Ctrl+Shift+C (and Cmd+C on macOS) for copy (always copies, doesn't send SIGINT)
+                if (e.Key == Key.C && (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift)
+                                       || (IsMacOS && e.KeyModifiers == KeyModifiers.Meta)))
                 {
                     if (_terminal.Selection.HasSelection)
                     {
@@ -1055,23 +1198,64 @@ namespace Iciclecreek.Terminal
                     }
                 }
 
-                // Clear selection for any other keystroke - but ignore bare modifier
-                // presses. Pressing ⌘/Ctrl/Shift on its own fires a KeyDown before the
-                // shortcut's letter arrives; clearing here would lose the selection
-                // before Cmd+C / Ctrl+Shift+C could copy it.
-                if (_terminal.Selection.HasSelection && !IsModifierKey(e.Key))
+                // Shift + navigation extends a selection in the buffer rather than sending the modified
+                // cursor sequence (ESC[1;2C and friends), which no interactive shell binds — zsh just
+                // echoes the ";2C" tail into the command line. Must come BEFORE the blanket clear below,
+                // since this is the one keystroke family that grows a selection instead of dropping it.
+                if (TryExtendKeyboardSelection(e))
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                // typing means "put me back at the prompt" — every terminal jumps to the tail on
+                // input, and without it a user who scrolled up types blind. After the Shift+navigation branch
+                // so growing a selection through the scrollback doesn't yank the view down, and past the
+                // modifier keys themselves for the same reason.
+                if (!IsModifierKey(e.Key))
+                    FollowTail();
+
+                // Clear selection for any other keystroke — but NOT for the modifier keys themselves.
+                // Avalonia raises a KeyDown for Shift/Ctrl/Alt/Cmd on their own way down, so without this
+                // guard pressing Cmd (or Ctrl+Shift) wiped the selection a fraction before the C arrived
+                // and every keyboard copy chord above found nothing to copy.
+                if (!IsModifierKey(e.Key) && _terminal.Selection.HasSelection)
                 {
                     _terminal.Selection.ClearSelection();
+                    _kbSelAnchor = null;
                     this.RequestInvalidate();
                 }
 
-                // Handle Ctrl+Shift+V for paste (standard terminal shortcut)
-                // Ctrl+V is NOT intercepted - it gets passed to the application
-                // (some apps use Ctrl+V for literal character input mode)
-                if (e.Key == Key.V && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+                // Paste on the platform's own chord — Cmd+V on macOS, Ctrl+V elsewhere — plus
+                // Ctrl+Shift+V everywhere (the traditional terminal shortcut). Upstream left Ctrl+V
+                // to the running program for literal-input mode; this fork treats paste as the app-level
+                // Mod+V binding instead, so programs that want a literal Ctrl+V take Ctrl+Q/Ctrl+V.
+                if (e.Key == Key.V && (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift)
+                                       || e.KeyModifiers == (IsMacOS ? KeyModifiers.Meta : KeyModifiers.Control)))
                 {
                     e.Handled = true;
                     await PasteAsync();
+                    return;
+                }
+
+                // Every other Cmd/Super chord belongs to the application, not the shell. Leave it
+                // unhandled so it bubbles to the app's key bindings; without this it falls through
+                // to the printable-character path below and types a literal letter into the PTY.
+                if ((e.KeyModifiers & KeyModifiers.Meta) != 0)
+                    return;
+
+                // Alt/Ctrl + Left/Right — "move by word". Same failure as Shift+arrow: what the emulator
+                // generates for them (ESC[1;3D and ESC[1;5D) is bound by no default shell keymap, so zsh
+                // echoes the ";3D" tail straight into the command line. ESC-b / ESC-f — backward-word /
+                // forward-word — is what zsh, bash's readline, fish and PSReadLine's default emacs mode
+                // all bind out of the box, so that is what these chords send. Left alone in the alternate
+                // buffer, where a full-screen app reads the real sequence itself.
+                if (e.Key is Key.Left or Key.Right
+                    && e.KeyModifiers is KeyModifiers.Alt or KeyModifiers.Control
+                    && !_terminal.IsAlternateBufferActive)
+                {
+                    e.Handled = true;
+                    await SendToPtyAsync(e.Key == Key.Left ? "\u001bb" : "\u001bf").ConfigureAwait(false);
                     return;
                 }
 
@@ -1146,6 +1330,73 @@ namespace Iciclecreek.Terminal
             }
         }
 
+        /// <summary>
+        /// Shift + arrows / Home / End extend a buffer selection from the cursor, the way a
+        /// text field does, instead of sending the modified-cursor escape sequence to the shell.
+        /// </summary>
+        /// <remarks>
+        /// Anchor and focus are caret BOUNDARIES (<c>row * Cols + col</c> over the gaps between cells), so
+        /// one Shift+Right covers one cell and collapsing back onto the anchor clears the selection —
+        /// exactly the arithmetic an editor does. The selection API itself is inclusive-cell, so the pair
+        /// is converted at the end.
+        ///
+        /// Left alone in the alternate buffer: full-screen apps (vim, less, a TUI agent) draw their own
+        /// selection and several bind Shift+arrow, so there the sequence still belongs to the app.
+        /// </remarks>
+        private bool TryExtendKeyboardSelection(KeyEventArgs e)
+        {
+            if (e.KeyModifiers != KeyModifiers.Shift)
+                return false;
+            if (_terminal.IsAlternateBufferActive)
+                return false;
+
+            int cols = Math.Max(1, _terminal.Cols);
+            int lastBoundary = cols * Math.Max(1, _terminal.Rows);
+
+            // A selection dropped by anything else (a click, a plain keystroke) re-anchors at the cursor.
+            if (_kbSelAnchor is null || !_terminal.Selection.HasSelection)
+            {
+                int cursorRow = Math.Clamp(
+                    _terminal.Buffer.YBase + _terminal.Buffer.Y - _terminal.Buffer.ViewportY,
+                    0, Math.Max(0, _terminal.Rows - 1));
+                int cursorOrd = Math.Clamp(cursorRow * cols + _terminal.Buffer.X, 0, lastBoundary);
+                _kbSelAnchor = cursorOrd;
+                _kbSelFocus = cursorOrd;
+            }
+
+            int focus = _kbSelFocus;
+            switch (e.Key)
+            {
+                case Key.Left: focus -= 1; break;
+                case Key.Right: focus += 1; break;
+                case Key.Up: focus -= cols; break;
+                case Key.Down: focus += cols; break;
+                case Key.Home: focus -= focus % cols; break;
+                case Key.End: focus += cols - (focus % cols); break;
+                default: return false;
+            }
+
+            _kbSelFocus = Math.Clamp(focus, 0, lastBoundary);
+
+            int anchor = _kbSelAnchor.Value;
+            if (_kbSelFocus == anchor)
+            {
+                _terminal.Selection.ClearSelection();
+            }
+            else
+            {
+                // Boundaries → the inclusive run of cells between them.
+                int first = Math.Min(anchor, _kbSelFocus);
+                int last = Math.Max(anchor, _kbSelFocus) - 1;
+                _terminal.Selection.StartSelection(first % cols, first / cols, XT.Selection.SelectionMode.Normal);
+                _terminal.Selection.UpdateSelection(last % cols, last / cols);
+                _terminal.Selection.EndSelection();
+            }
+
+            this.RequestInvalidate();
+            return true;
+        }
+
         protected override async void OnKeyUp(KeyEventArgs e)
         {
             // Only process input if this terminal has focus
@@ -1216,8 +1467,11 @@ namespace Iciclecreek.Terminal
             if (_terminal.Selection.HasSelection)
             {
                 _terminal.Selection.ClearSelection();
+                _kbSelAnchor = null;
                 this.RequestInvalidate();
             }
+
+            FollowTail();   // typing returns the view to the prompt
 
             try
             {
@@ -1243,6 +1497,11 @@ namespace Iciclecreek.Terminal
                 var point = e.GetPosition(this);
                 var col = (int)(point.X / _charWidth);
                 var row = (int)(point.Y / _charHeight);
+
+                // Any press hands selection back to the mouse — a later Shift+arrow re-anchors at the cursor
+                // rather than extending whatever the pointer just drew. FIRST, so it still runs when
+                // the Ctrl+Click path below returns early.
+                _kbSelAnchor = null;
 
                 // Ctrl+Click on a URL. Resolved from the press position rather than the hover state,
                 // which goes stale whenever the viewport moves without the pointer (wheel scroll, new
@@ -1475,32 +1734,46 @@ namespace Iciclecreek.Terminal
 
             // Delta.Y is positive when scrolling up (towards user), negative when scrolling down
             var delta = e.Delta.Y;
+            if (delta == 0)
+                return;
 
             if (_ptyConnection != null && _terminal.MouseTrackingMode != XT.Input.MouseTrackingMode.None)
             {
+                // The app owns the wheel — report notches to it. Accumulate the same way, so a trackpad's
+                // fractional stream turns into whole notches instead of one report per micro-event (which
+                // would fly a pager past the end) or none at all.
+                var notches = TakeWheelSteps(ref _wheelResidualApp, delta * scrollLines);
+                if (notches == 0)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
                 var point = e.GetPosition(this);
                 var col = (int)(point.X / _charWidth);
                 var row = (int)(point.Y / _charHeight);
                 var modifiers = ConvertAvaloniaModifiers(e.KeyModifiers);
 
-                var button = delta > 0 ? XT.Input.MouseButton.WheelUp : XT.Input.MouseButton.WheelDown;
-                var eventType = delta > 0 ? XT.Input.MouseEventType.WheelUp : XT.Input.MouseEventType.WheelDown;
+                var button = notches > 0 ? XT.Input.MouseButton.WheelUp : XT.Input.MouseButton.WheelDown;
+                var eventType = notches > 0 ? XT.Input.MouseEventType.WheelUp : XT.Input.MouseEventType.WheelDown;
 
                 var sequence = _terminal.GenerateMouseEvent(button, col, row, eventType, modifiers);
                 if (!string.IsNullOrEmpty(sequence))
                 {
-                    await SendToPtyAsync(sequence).ConfigureAwait(false);
+                    // Mark handled BEFORE the await — after it the event has already finished bubbling.
                     e.Handled = true;
+                    var repeated = string.Concat(Enumerable.Repeat(sequence, Math.Min(Math.Abs(notches), 12)));
+                    await SendToPtyAsync(repeated).ConfigureAwait(false);
                     return;
                 }
             }
 
-            if (delta != 0)
-            {
-                // Scroll up (negative delta to ViewportY) when wheel scrolls up (positive delta)
-                // Scroll down (positive delta to ViewportY) when wheel scrolls down (negative delta)
-                int linesToScroll = (int)(-delta * scrollLines);
+            // Scroll up (negative delta to ViewportY) when wheel scrolls up (positive delta)
+            // Scroll down (positive delta to ViewportY) when wheel scrolls down (negative delta)
+            int linesToScroll = -TakeWheelSteps(ref _wheelResidual, delta * scrollLines);
 
+            if (linesToScroll != 0)
+            {
                 // Calculate new viewport position
                 int newViewportY = Math.Clamp(
                     ViewportY + linesToScroll,
@@ -1512,8 +1785,67 @@ namespace Iciclecreek.Terminal
                     ViewportY = newViewportY;
                 }
 
-                e.Handled = true;
+                // Leaving the tail stops the auto-follow; coming back to it resumes.
+                _followBottom = _autoScroll && ViewportY >= MaxScrollback;
             }
+
+            e.Handled = true;
+        }
+
+        /// <summary>
+        /// Return the view to the tail of the buffer and resume auto-follow — what a host's
+        /// "jump to bottom" affordance calls, and what typing does implicitly. A no-op in the alternate
+        /// buffer (no scrollback of its own) and when AutoScrollToBottom is off.
+        /// </summary>
+        public void FollowTail()
+        {
+            if (_isAlternateBuffer || !_autoScroll)
+                return;
+
+            _followBottom = true;
+
+            var max = MaxScrollback;
+            if (ViewportY < max)
+                ViewportY = max;
+        }
+
+        /// <summary>
+        /// True while the view is following the tail — the state in which new output drags the
+        /// viewport along. Exposed so hosts and tests can observe it without reflecting into privates.
+        /// </summary>
+        public bool IsFollowingTail => _followBottom;
+
+        /// <summary>
+        /// The scrollback ring dropped <paramref name="count"/> lines off the top, so every absolute
+        /// index below shifted by that much. When the view is following the tail the pending
+        /// ScrollToBottom sorts it out; when it is parked up in the scrollback, move it down by the
+        /// same amount so the content the user is reading stays under their eye.
+        /// </summary>
+        private void OnBufferTrimmed(int count)
+        {
+            if (_followBottom || count <= 0)
+                return;
+
+            var y = _terminal.Buffer.ViewportY;
+            if (y > 0)
+                _terminal.Buffer.ViewportY = Math.Max(0, y - count);
+        }
+
+        /// <summary>
+        /// Add <paramref name="step"/> to a running remainder and hand back the whole steps that
+        /// have piled up, keeping the fraction for next time. A direction change drops the stale remainder so
+        /// a reversal answers on the first event rather than paying off the old direction's debt first.
+        /// </summary>
+        private static int TakeWheelSteps(ref double residual, double step)
+        {
+            if (residual != 0 && Math.Sign(step) != Math.Sign(residual))
+                residual = 0;
+
+            residual += step;
+
+            var whole = Math.Truncate(residual);
+            residual -= whole;
+            return (int)whole;
         }
 
         protected override async void OnGotFocus(FocusChangedEventArgs e)
@@ -2207,20 +2539,45 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
+        /// Bind this view to a PTY connection SOMEONE ELSE owns, instead of spawning one. Lets a host keep
+        /// process ownership elsewhere — so a long-running server outlives the pane that shows it — while the
+        /// pane attaches here as a viewer over an adapter connection. Everything
+        /// downstream is the <see cref="LaunchProcess()"/> path unchanged — reader loop, input, resize, exit — only
+        /// ownership differs: <see cref="CleanupProcess"/> detaches instead of killing, so closing the pane (or
+        /// re-parenting it) never takes the process down with it.
+        /// </summary>
+        public void AttachConnection(IPtyConnection connection)
+        {
+            CleanupProcess();
+
+            _externalConnection = true;
+            _processCts = new CancellationTokenSource();
+            Interlocked.Exchange(ref _processExitHandled, 0);
+
+            _ptyConnection = connection;
+            connection.ProcessExited += OnPtyProcessExited;
+            _ = Task.Run(async () => await ReadPtyOutputAsync(connection, _processCts.Token), _processCts.Token);
+        }
+
+        // true while _ptyConnection belongs to an outside owner (see AttachConnection).
+        private bool _externalConnection;
+
+        /// <summary>
         /// Launch the terminal process with the current Process, Args, and StartingDirectory properties. If the process is already running, it will be
-        /// terminated and replaced with a new instance using the updated properties. 
+        /// terminated and replaced with a new instance using the updated properties.
         /// </summary>
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
         public async Task LaunchProcess()
         {
             CleanupProcess();
+            _externalConnection = false;   // this view owns what it spawns
 
             try
             {
                 _processCts = new CancellationTokenSource();
                 Interlocked.Exchange(ref _processExitHandled, 0);  // Reset flag for new process
-
+    
                 // Determine the process to launch based on OS if not explicitly set
                 string processToLaunch = Process;
                 if (string.IsNullOrEmpty(processToLaunch))
@@ -2246,13 +2603,22 @@ namespace Iciclecreek.Terminal
                     options.CommandLine = Args.ToArray();
                 }
 
-                _ptyConnection = await PtyProvider.SpawnAsync(options, _processCts.Token);
+                // Extra environment for the child process (see EnvironmentOverrides).
+                if (EnvironmentOverrides != null)
+                {
+                    foreach (var kvp in EnvironmentOverrides)
+                        options.Environment[kvp.Key] = kvp.Value;
+                }
+
+                var spawned = await PtyProvider.SpawnAsync(options, _processCts.Token);
+                _ptyConnection = spawned;
 
                 // Subscribe to process exit event for reliable exit detection
-                _ptyConnection.ProcessExited += OnPtyProcessExited;
+                spawned.ProcessExited += OnPtyProcessExited;
 
-                // Start reading from the PTY connection
-                _ = Task.Run(async () => await ReadPtyOutputAsync(_processCts.Token), _processCts.Token);
+                // Start reading from the PTY connection. The loop is handed THIS connection so a
+                // relaunch cannot redirect it onto the next one — see ReadPtyOutputAsync.
+                _ = Task.Run(async () => await ReadPtyOutputAsync(spawned, _processCts.Token), _processCts.Token);
             }
             catch (Exception ex)
             {
@@ -2279,7 +2645,15 @@ namespace Iciclecreek.Terminal
             await LaunchProcess();
         }
 
-        private async Task ReadPtyOutputAsync(CancellationToken cancellationToken)
+        /// <param name="connection">
+        /// The connection this loop reads, passed in rather than re-read from the field on every
+        /// iteration. A read is an await, and a relaunch during one swaps the field — so a loop
+        /// that consults <c>_ptyConnection</c> afterwards can find itself operating on the NEXT
+        /// process: waiting on it, reading its exit code, and claiming the exit interlock that
+        /// LaunchProcess had just reset for it. Holding the reference makes a stale loop stale in
+        /// the only way that is safe, which is entirely.
+        /// </param>
+        private async Task ReadPtyOutputAsync(IPtyConnection connection, CancellationToken cancellationToken)
         {
             try
             {
@@ -2290,15 +2664,54 @@ namespace Iciclecreek.Terminal
                 // cannot consume the current one's signal.
                 var shellReadyPosted = false;
 
-                while (!cancellationToken.IsCancellationRequested && _ptyConnection != null)
+                // ReferenceEquals rather than a null check: a relaunch swaps _ptyConnection, and a
+                // surviving loop from the previous process must stop rather than keep writing into
+                // the new one's terminal. Null-checking only catches teardown, not replacement.
+                while (!cancellationToken.IsCancellationRequested && ReferenceEquals(_ptyConnection, connection))
                 {
-                    var bytesRead = await _ptyConnection.ReaderStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
+                    var bytesRead = await connection.ReaderStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
                     if (bytesRead == 0)
                     {
                         // Process has exited — fallback in case OnPtyProcessExited didn't fire first.
-                        if (Interlocked.Exchange(ref _processExitHandled, 1) == 0)
+                        //
+                        // EOF on the master side means the child closed its end, which can beat the
+                        // child actually being REAPED — and until it is, ExitCode is still its
+                        // default 0. Reading it straight away reported a clean exit for a process
+                        // that had failed, whenever this path won the race against
+                        // OnPtyProcessExited. Measured: 20 runs of `sh -c "exit 3"` reported 0 once.
+                        //
+                        // Reaping happens BEFORE the interlock is claimed, which does two things.
+                        // It makes the exit code readable; and it gives OnPtyProcessExited — which
+                        // carries the code authoritatively — its window to win the race instead,
+                        // rather than being locked out by a claim staked before we knew anything.
+                        // The child is gone by definition, so this returns almost immediately.
+                        var reaped = false;
+                        try { reaped = connection.WaitForExit(ExitReapGraceMs); }
+                        catch { /* never let reaping be the reason output stops */ }
+
+                        // A child that will not reap inside the grace period leaves us with no
+                        // trustworthy code, and the one we would otherwise read is 0 — the single
+                        // wrong answer that reads as SUCCESS. So it is still not reported here.
+                        //
+                        // It is NOT abandoned either, which it used to be. Leaving the interlock
+                        // unclaimed means no ProcessExited is raised at all if the pty layer's own
+                        // event also never fires — and a host that is never told the process ended
+                        // cannot leave the state it entered when the process started. A host's
+                        // TerminalWell sat in Live forever, and every test waiting for it to settle
+                        // timed out at 20s. That was traded away for "no wrong exit code" without
+                        // noticing that the cost was the notification itself, not just the number.
+                        //
+                        // The child is dead by definition, so the reap WILL land — the grace period
+                        // is only a ceiling on how long this READ LOOP waits for it. Hand the wait
+                        // off instead, so the loop ends now and the host still hears about it.
+                        if (!reaped)
                         {
-                            var exitCode = _ptyConnection?.ExitCode ?? 0;
+                            ReapInBackground(connection);
+                        }
+
+                        if (reaped && Interlocked.Exchange(ref _processExitHandled, 1) == 0)
+                        {
+                            var exitCode = connection.ExitCode;
 
                             lock (_terminalLock)
                             {
@@ -2318,11 +2731,22 @@ namespace Iciclecreek.Terminal
 
                     var output = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
+                    // Output sniffers (still on the read task).
+                    try { OutputReceived?.Invoke(this, output); } catch { /* a sniffer must never kill the read loop */ }
+
                     // Snapshot before write so we can detect buffer growth (MaxScrollback
                     // increases when _terminal.Write adds lines; ScrollToBottom only moves
                     // ViewportY and does not affect buffer length).
                     var oldMax = MaxScrollback;
                     var oldY = _terminal.Buffer.ViewportY;
+
+                    // follow the tail only if the view was ALREADY at the tail. Upstream called
+                    // ScrollToBottom() on every chunk unconditionally, which yanked the user back down the
+                    // instant anything printed — scrolling back through a terminal that was still producing
+                    // output (a build, an agent lane, a shell that just redrew its prompt) was impossible.
+                    // Read before the write: mid-write YBase advances, so IsAtBottom would read false for a
+                    // view that IS following. _followBottom is also what the trim handler keys off.
+                    _followBottom = _isAlternateBuffer || (_autoScroll && _terminal.Buffer.IsAtBottom);
 
                     lock (_terminalLock)
                     {
@@ -2342,6 +2766,10 @@ namespace Iciclecreek.Terminal
                             if (_processCts?.Token != cancellationToken)
                                 return;
 
+                            // Force a real paint on the first chunk. The ordinary first paint is
+                            // focus-gated and frame-throttled, so a freshly-launched terminal stays
+                            // blank until it is clicked.
+                            Refresh();
                             ShellReady?.Invoke(this, EventArgs.Empty);
                         });
                     }
@@ -2351,7 +2779,11 @@ namespace Iciclecreek.Terminal
                     // handles its own cursor positioning and shouldn't be scrolled.
                     if (!_isAlternateBuffer)
                     {
-                        _terminal.Buffer.ScrollToBottom();
+                        if (_followBottom)
+                            _terminal.Buffer.ScrollToBottom();
+
+                        // Notify either way: a view parked up in the scrollback still needs its scrollbar to
+                        // learn that the buffer grew (and that OnBufferTrimmed nudged ViewportY under it).
                         var newY = _terminal.Buffer.ViewportY;
                         var newMax = MaxScrollback;
 
@@ -2371,6 +2803,7 @@ namespace Iciclecreek.Terminal
                     Dispatcher.UIThread.Post(() => _inputMethodClient?.NotifyCursorRectangleChanged());
 
                     this.RequestInvalidate();
+
                 }
             }
             catch (OperationCanceledException)
@@ -2391,6 +2824,68 @@ namespace Iciclecreek.Terminal
 
                 this.RequestInvalidate();
             }
+        }
+
+        /// <summary>
+        /// Keep waiting for a child that did not reap inside <see cref="ExitReapGraceMs"/>, off the
+        /// read loop, and report the exit when it finally lands.
+        /// </summary>
+        /// <remarks>
+        /// <para>The read loop must not block on this — it is the thing that would otherwise be
+        /// pumping output — but the exit still has to be reported, or the host is left believing a
+        /// dead process is running.</para>
+        /// <para>Claims the same interlock, so if <see cref="OnPtyProcessExited"/> gets there first
+        /// with the authoritative code, this stays silent. If the ceiling expires the exit IS still
+        /// reported, with <see cref="ProcessExitedEventArgs.ExitCodeKnown"/> false — "ended, outcome
+        /// unreadable" is honest, whereas 0 would read as success and silence reads as running.</para>
+        /// <para>The connection may be disposed underneath this at any point (a relaunch, a close).
+        /// That is not an error worth surfacing: it means the exit is moot.</para>
+        /// </remarks>
+        private void ReapInBackground(IPtyConnection connection)
+        {
+            _ = Task.Run(async () =>
+            {
+                var deadline = DateTime.UtcNow.AddMilliseconds(ExitReapCeilingMs);
+                var reaped = false;
+
+                while (DateTime.UtcNow < deadline)
+                {
+                    if (Volatile.Read(ref _processExitHandled) != 0) return;   // someone else reported it
+                    try
+                    {
+                        if (connection.WaitForExit(ExitReapPollMs)) { reaped = true; break; }
+                    }
+                    catch
+                    {
+                        return;   // disposed / gone — nothing left to report about
+                    }
+                    await Task.Yield();
+                }
+
+                if (Interlocked.Exchange(ref _processExitHandled, 1) != 0) return;
+
+                int? code = null;
+                if (reaped)
+                {
+                    try { code = connection.ExitCode; } catch { /* fall through as unknown */ }
+                }
+
+                lock (_terminalLock)
+                {
+                    _terminal.WriteLine(code is { } c
+                        ? $"\nProcess exited with code: {c}\n"
+                        : "\nProcess exited\n");
+                    _terminal.Buffer.ScrollToBottom();
+                }
+                this.RequestInvalidate();
+
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ProcessExited?.Invoke(this, code is { } c
+                        ? new ProcessExitedEventArgs(c)
+                        : ProcessExitedEventArgs.UnknownCode());
+                });
+            });
         }
 
         private void OnPtyProcessExited(object? sender, PtyExitedEventArgs e)
@@ -2424,7 +2919,15 @@ namespace Iciclecreek.Terminal
                 {
                     // Unsubscribe from event before cleanup
                     _ptyConnection.ProcessExited -= OnPtyProcessExited;
-                    _ptyConnection.Kill();
+                    // An ATTACHED connection belongs to its owner — never kill it. Closing or re-parenting a
+                    // viewer pane must not stop the process behind it. Dispose still runs: on an attached
+                    // connection that IS the detach (it drops this pane's subscription), so a closed pane
+                    // leaves nothing streaming behind it.
+                    if (!_externalConnection)
+                    {
+                        _ptyConnection.Kill();
+                    }
+
                     _ptyConnection.Dispose();
                 }
                 catch
@@ -2441,6 +2944,24 @@ namespace Iciclecreek.Terminal
             _processCts = null;
         }
 
+        /// <summary>
+        /// One cell's width at the current font — text is drawn at <c>col * CharWidth</c>. A host overlay
+        /// can size its stand-in caret from this so waking the session shifts nothing.
+        /// </summary>
+        public double CharWidth
+        {
+            get { if (_charWidth <= 0) UpdateTextMetrics(); return _charWidth; }
+        }
+
+        /// <summary>
+        /// One row's height at the current font — row N's text top-left is <c>(0, N * CharHeight)</c>,
+        /// so a stand-in prompt lands on the live first row by placing it at the view's own origin.
+        /// </summary>
+        public double CharHeight
+        {
+            get { if (_charHeight <= 0) UpdateTextMetrics(); return _charHeight; }
+        }
+
         private void UpdateTextMetrics()
         {
             var typeface = new Typeface(FontFamily, FontStyle, FontWeight);
@@ -2454,6 +2975,34 @@ namespace Iciclecreek.Terminal
 
             _charWidth = _measureText.Width;
             _charHeight = _measureText.Height;
+        }
+
+        /// <summary>
+        /// Force a correct full re-render. Upstream's first paint is focus-gated (the blink/redraw loop only runs
+        /// when focused) and frame-throttled, so a freshly-launched or just-shown terminal can stay blank until
+        /// clicked. This re-applies font metrics, re-grids to the current size, drops the per-line render caches,
+        /// and invalidates immediately (bypassing <see cref="TerminalRenderThrottle"/>). Safe to call any time
+        /// (no-op-ish before the terminal is initialised).
+        /// </summary>
+        public void Refresh()
+        {
+            if (_terminal == null)
+                return;
+
+            UpdateTextMetrics();
+
+            // Drop cached text runs so each line rebuilds at the current metrics/size.
+            for (int y = 0; y < _terminal.Buffer.Length; y++)
+            {
+                var line = _terminal.Buffer.GetLine(y);
+                if (line != null)
+                    line.Cache = null;
+            }
+
+            // Re-run layout (ArrangeOverride re-grids the terminal + PTY for the current size), then paint now.
+            InvalidateMeasure();
+            InvalidateArrange();
+            InvalidateVisual();
         }
 
         protected override Size MeasureOverride(Size availableSize)
@@ -2562,7 +3111,8 @@ namespace Iciclecreek.Terminal
                     var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
                     var position = new Point(startX, startYPos);
 
-                    context.FillRectangle(run.Background, rect);
+                    if (run.Background is not null)
+                        context.FillRectangle(run.Background, rect);
                     context.DrawText(run.Text, position);
                 }
                 return;
@@ -2621,14 +3171,17 @@ namespace Iciclecreek.Terminal
                 var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
                 var background = cell.GetBackgroundBrush(this.Background);
                 var foreground = cell.GetForegroundBrush(this.Foreground);
+                // Whether this run ends up drawn with the colours swapped. Once they are, the fill is no
+                // longer optional: the "background" being painted is the text colour.
+                bool swapped = false;
                 // Apply cell-level inverse attribute
                 if (cell.Attributes.IsInverse())
-                    (foreground, background) = (background, foreground);
+                    (foreground, background, swapped) = (background, foreground, !swapped);
                 // Apply terminal-wide reverse video mode (DECSCNM)
                 if (_terminal.ReverseVideo)
-                    (foreground, background) = (background, foreground);
+                    (foreground, background, swapped) = (background, foreground, !swapped);
                 if (cell.Attributes.IsBlink() && this._cursorBlinkOn)
-                    (foreground, background) = (background, foreground);
+                    (foreground, background, swapped) = (background, foreground, !swapped);
 
                 var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
                 var formattedText = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, FontSize, foreground);
@@ -2637,10 +3190,14 @@ namespace Iciclecreek.Terminal
                     formattedText.SetTextDecorations(td);
 
                 var position = new Point(startX, startYPos);
+                // A cell that carries no background of its own and wasn't swapped paints nothing, leaving
+                // whatever the view is layered over to show through.
+                var fill = swapped || cell.GetBackgroundColor().HasValue ? background : null;
                 // Cache only content-dependent data, not screen position
-                textRuns.Add(new CachedTextRun(formattedText, runStartX, cellCount, background));
+                textRuns.Add(new CachedTextRun(formattedText, runStartX, cellCount, fill));
 
-                context.FillRectangle(background, rect);
+                if (fill is not null)
+                    context.FillRectangle(fill, rect);
                 context.DrawText(formattedText, position);
             }
 
@@ -2752,14 +3309,15 @@ namespace Iciclecreek.Terminal
                         var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
                         var background = cell.GetBackgroundBrush(this.Background);
                         var foreground = cell.GetForegroundBrush(this.Foreground);
+                        bool swapped = false;
                         // Apply cell-level inverse attribute
                         if (cell.Attributes.IsInverse())
-                            (foreground, background) = (background, foreground);
+                            (foreground, background, swapped) = (background, foreground, !swapped);
                         // Apply terminal-wide reverse video mode (DECSCNM)
                         if (_terminal.ReverseVideo)
-                            (foreground, background) = (background, foreground);
+                            (foreground, background, swapped) = (background, foreground, !swapped);
                         if (cell.Attributes.IsBlink() && this._cursorBlinkOn)
-                            (foreground, background) = (background, foreground);
+                            (foreground, background, swapped) = (background, foreground, !swapped);
 
                         var typeface = new Typeface(FontFamily, cell.GetFontStyle(), cell.GetFontWeight());
                         var formattedText = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, FontSize, foreground);
@@ -2769,7 +3327,8 @@ namespace Iciclecreek.Terminal
 
                         var position = new Point(startX, startYPos);
 
-                        context.FillRectangle(background, rect);
+                        if (swapped || cell.GetBackgroundColor().HasValue)
+                            context.FillRectangle(background, rect);
                         context.DrawText(formattedText, position);
                     }
                 }
@@ -2830,6 +3389,13 @@ namespace Iciclecreek.Terminal
 
         private void RenderCursor(DrawingContext context, int viewportY, double scale)
         {
+            // no process, no cursor. Upstream paints the block cursor at buffer (0,0) purely
+            // from buffer state, so a view that has never launched — or whose process has exited — shows a
+            // stray caret in its top-left corner with nothing behind it. A cursor represents a shell
+            // waiting for input; when there is no shell there is nothing to represent.
+            if (!IsLive || SuppressCursor)
+                return;
+
             // Only show cursor if terminal wants it visible (controlled by escape sequences)
             if (!_terminal.CursorVisible)
                 return;

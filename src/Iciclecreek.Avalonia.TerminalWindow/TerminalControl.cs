@@ -62,6 +62,8 @@ namespace Iciclecreek.Terminal
         /// <inheritdoc cref="TerminalView.ShellReady"/>
         public event EventHandler? ShellReady;
         public event EventHandler<ProcessExitedEventArgs>? ProcessExited;
+        /// <inheritdoc cref="TerminalView.OutputReceived"/>
+        public event EventHandler<string>? OutputReceived;
         /// <inheritdoc cref="TerminalView.UrlClicked"/>
         public event EventHandler<UrlClickedEventArgs>? UrlClicked;
 
@@ -140,7 +142,7 @@ namespace Iciclecreek.Terminal
             if (_stylesLoaded || Application.Current == null)
                 return;
 
-            var uri = new Uri("avares://Iciclecreek.Avalonia.Terminal/Themes/Generic.axaml");
+            var uri = new Uri("avares://Iciclecreek.Terminal/Themes/Generic.axaml");
 
             // Check if styles are already loaded to avoid duplicates
             foreach (var style in Application.Current.Styles)
@@ -190,6 +192,13 @@ namespace Iciclecreek.Terminal
         /// normal cleanup behaviour.
         /// </summary>
         public void EndReparent() => _terminalView?.EndReparent();
+
+        /// <inheritdoc cref="TerminalView.AutoScrollToBottomProperty"/>
+        public bool AutoScrollToBottom
+        {
+            get => _terminalView?.AutoScrollToBottom ?? true;
+            set { if (_terminalView != null) _terminalView.AutoScrollToBottom = value; }
+        }
 
         /// <inheritdoc cref="TerminalView.ShowCaretOnClickProperty"/>
         public bool ShowCaretOnClick
@@ -287,6 +296,7 @@ namespace Iciclecreek.Terminal
                 _terminalView.PropertyChanged -= OnTerminalViewPropertyChanged;
                 _terminalView.ProcessExited -= OnTerminalViewProcessExited;
                 _terminalView.ShellReady -= OnTerminalViewShellReady;
+                _terminalView.OutputReceived -= OnTerminalViewOutputReceived;
                 _terminalView.UrlClicked -= OnTerminalViewUrlClicked;
             }
 
@@ -304,6 +314,7 @@ namespace Iciclecreek.Terminal
                 _terminalView.PropertyChanged += OnTerminalViewPropertyChanged;
                 _terminalView.ProcessExited += OnTerminalViewProcessExited;
                 _terminalView.ShellReady += OnTerminalViewShellReady;
+                _terminalView.OutputReceived += OnTerminalViewOutputReceived;
                 _terminalView.UrlClicked += OnTerminalViewUrlClicked;
                 SetCurrentDirectory(_terminalView.CurrentDirectory);
                 // (no window event hooking needed)
@@ -341,6 +352,11 @@ namespace Iciclecreek.Terminal
         private void OnTerminalViewShellReady(object? sender, EventArgs e)
         {
             ShellReady?.Invoke(this, e);
+        }
+
+        private void OnTerminalViewOutputReceived(object? sender, string e)
+        {
+            OutputReceived?.Invoke(this, e);
         }
 
         private void OnTerminalViewUrlClicked(object? sender, UrlClickedEventArgs e)

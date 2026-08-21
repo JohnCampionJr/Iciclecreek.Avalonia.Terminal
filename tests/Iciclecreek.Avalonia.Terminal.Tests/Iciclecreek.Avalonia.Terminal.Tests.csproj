@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Microsoft Testing Platform rather than the VSTest bridge: the test project is its own
+         runner, which is what the Windows runner invokes directly. -->
+    <OutputType>Exe</OutputType>
+    <EnableMicrosoftTestingPlatform>true</EnableMicrosoftTestingPlatform>
+    <EnableMSTestRunner>true</EnableMSTestRunner>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <!-- 180s, not 60s: this suite spawns real PTYs and a batch of them at once, and on a
+         two-core runner that takes far longer than on a dev machine. A module timeout that trips
+         reports itself as "error: 1" with zero failed tests, which reads like anything but a
+         timeout. -->
+    <TestingPlatformCommandLineArguments>--timeout 180s</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AwesomeAssertions" Version="9.4.0" />
+    <PackageReference Include="MSTest" Version="4.2.3" />
+    <PackageReference Include="Avalonia.Headless" Version="$(AvaloniaVersion)" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Microsoft.VisualStudio.TestTools.UnitTesting" />
+    <Using Include="AwesomeAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Iciclecreek.Avalonia.TerminalWindow\Iciclecreek.Avalonia.Terminal.csproj" />
+  </ItemGroup>
+
+</Project>

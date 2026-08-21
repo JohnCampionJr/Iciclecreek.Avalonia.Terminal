@@ -1,6 +1,5 @@
 <Project>
-  <PropertyGroup>
-    <Nullable>enable</Nullable>
-    <AvaloniaVersion>11.1.0</AvaloniaVersion>
-  </PropertyGroup>
+  <!-- Everything lives in the repo-root props; this just chains to it so the demos and the
+       library share one set of defaults. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
 </Project>
