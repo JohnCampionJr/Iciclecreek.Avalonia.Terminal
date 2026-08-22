@@ -22,8 +22,8 @@ permissions:
 env:
   PACKAGE_ID: Avalloy.Terminal
   PTY_PACKAGE_ID: Avalloy.PortaPty
-  FEED: https://nuget.cloudsmith.io/jcamp/packages/v3/index.json
-  FEED_USER: john-campion
+  FEED: https://f.feedz.io/jcamp/packages/nuget/index.json
+  FEED_USER: feedz
 
 jobs:
   publish:
@@ -55,15 +55,13 @@ jobs:
         with:
           dotnet-version: '10.x'
 
-      # RestoreAdditionalProjectSources alone is not enough for this feed. Anonymous package DOWNLOAD
-      # works, which is why a local restore succeeds and looks like proof, but NuGet also fetches
-      # .../repository-signatures/5.0.0/index.json during restore and that endpoint refuses anonymously:
-      # NU1301 "Unable to get repository signature information for source ... 401 (Unauthorized)". A
-      # named source carrying credentials answers both. The same key that pushes; restore only reads.
+      # RestoreAdditionalProjectSources alone is not enough for this feed: it is private, so every
+      # request needs credentials, and a bare URL source carries none. A named source carrying them
+      # answers both the metadata and the download. The same key that pushes; restore only reads.
       - name: Add the feed with credentials
         run: |
           dotnet nuget add source "${{ env.FEED }}" \
-            --name cloudsmith \
+            --name feedz \
             --username "${{ env.FEED_USER }}" \
             --password "${{ secrets.NUGET_API_KEY }}" \
             --store-password-in-clear-text
@@ -130,7 +128,7 @@ jobs:
           path: artifacts/*.nupkg
           if-no-files-found: error
 
-      - name: Push to Cloudsmith
+      - name: Push to the feed
         if: startsWith(github.ref_name, 'release/')
         run: |
           dotnet nuget push "artifacts/${{ env.PACKAGE_ID }}.${{ steps.v.outputs.version }}.nupkg" \
