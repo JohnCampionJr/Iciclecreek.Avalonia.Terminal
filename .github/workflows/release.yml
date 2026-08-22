@@ -81,11 +81,9 @@ jobs:
       # BUILD then PACK, not one shot: overriding AssemblyName changes the file the build produces, and
       # GeneratePackageOnBuild packs during that same build, before the rename lands — NU5026, "the
       # file Avalloy.Terminal.dll to be packed was not found on disk". Same trap as dev-link's.
-      # The feed arrives as RestoreAdditionalProjectSources, an MSBuild PROPERTY, not a committed
-      # NuGet.config — this tree stays upstream-shaped, and a clone of it must restore from nuget.org
-      # alone. Without it the build dies NU1101 "no packages exist with this id in source(s):
-      # nuget.org", because the substituted PTY dependency only exists on our feed. Read-only, so no
-      # credential is involved; the push later is the only authenticated step.
+      # Nothing here names our feed: it was added as a named source in the step above, deliberately at
+      # RUNTIME rather than in a committed NuGet.config, because this tree stays upstream-shaped and a
+      # clone of it must restore from nuget.org alone.
       - name: Build
         run: |
           dotnet build src/Iciclecreek.Avalonia.TerminalWindow/*.csproj \
