@@ -2572,8 +2572,10 @@ namespace Iciclecreek.Terminal
         /// process ownership elsewhere — so a long-running server outlives the pane that shows it — while the
         /// pane attaches here as a viewer over an adapter connection. Everything
         /// downstream is the <see cref="LaunchProcess()"/> path unchanged — reader loop, input, resize, exit — only
-        /// ownership differs: <see cref="CleanupProcess"/> detaches instead of killing, so closing the pane (or
-        /// re-parenting it) never takes the process down with it.
+        /// ownership differs: <see cref="CleanupProcess"/> neither kills NOR disposes an attached connection,
+        /// so closing the pane (or re-parenting it) never takes the process down with it. Disposing would —
+        /// closing the pty ends the child on every platform — which is why the detach does not.
+        /// <see cref="DetachConnection"/> is the same operation on demand, with a name.
         /// </summary>
         public void AttachConnection(IPtyConnection connection)
         {
@@ -2607,6 +2609,42 @@ namespace Iciclecreek.Terminal
                 TaskCreationOptions.LongRunning | TaskCreationOptions.DenyChildAttach,
                 TaskScheduler.Default);
         }
+
+        /// <summary>
+        /// Stop following the current connection and hand it back, without stopping the process behind it.
+        /// </summary>
+        /// <returns>The connection that was detached, or <c>null</c> if none was attached.</returns>
+        /// <remarks>
+        /// <para>Detaching already happens implicitly — closing the view, or attaching a replacement, does it —
+        /// but only as a side effect of cleanup, where it is easy to get wrong. It was wrong here until
+        /// recently: cleanup disposed the connection and a comment called that the detach, when disposing is
+        /// what ends the child. Giving the operation a name is what makes that mistake visible next time.</para>
+        /// <para>Ownership passes to the caller for whatever it returns, including a connection this view
+        /// spawned itself — detaching one of those hands over a process the view would otherwise have killed,
+        /// so the caller must dispose it when done. The view is left with nothing attached and
+        /// <see cref="IsLive"/> false.</para>
+        /// </remarks>
+        public IPtyConnection? DetachConnection()
+        {
+            IPtyConnection? connection;
+            lock (_exitGate)
+            {
+                connection = _ptyConnection;
+            }
+
+            if (connection is null)
+            {
+                return null;
+            }
+
+            // Marked external BEFORE cleanup, which is what makes cleanup let it live: the same flag the
+            // attach path sets, meaning exactly the same thing — this process is somebody else's now.
+            _externalConnection = true;
+            CleanupProcess();
+            return connection;
+        }
+
+        /// <summary>True while the connection belongs to an outside owner — see <see cref="AttachConnection"/>.</summary>
 
         // true while _ptyConnection belongs to an outside owner (see AttachConnection).
         private bool _externalConnection;
