@@ -23,6 +23,7 @@ env:
   PACKAGE_ID: Avalloy.Terminal
   PTY_PACKAGE_ID: Avalloy.PortaPty
   FEED: https://nuget.cloudsmith.io/jcamp/packages/v3/index.json
+  FEED_USER: john-campion
 
 jobs:
   publish:
@@ -54,10 +55,22 @@ jobs:
         with:
           dotnet-version: '10.x'
 
+      # RestoreAdditionalProjectSources alone is not enough for this feed. Anonymous package DOWNLOAD
+      # works, which is why a local restore succeeds and looks like proof, but NuGet also fetches
+      # .../repository-signatures/5.0.0/index.json during restore and that endpoint refuses anonymously:
+      # NU1301 "Unable to get repository signature information for source ... 401 (Unauthorized)". A
+      # named source carrying credentials answers both. The same key that pushes; restore only reads.
+      - name: Add the feed with credentials
+        run: |
+          dotnet nuget add source "${{ env.FEED }}" \
+            --name cloudsmith \
+            --username "${{ env.FEED_USER }}" \
+            --password "${{ secrets.NUGET_API_KEY }}" \
+            --store-password-in-clear-text
+
       - name: Test
         run: |
-          dotnet test tests/Iciclecreek.Avalonia.Terminal.Tests/*.csproj --configuration Release \
-            -p:RestoreAdditionalProjectSources=${{ env.FEED }}
+          dotnet test tests/Iciclecreek.Avalonia.Terminal.Tests/*.csproj --configuration Release
 
       # PtyPackageId is a SUBSTITUTION, not an addition. This fork keeps upstream's Porta.Pty
       # namespace, so a consumer graph containing both the upstream package and ours has every type
@@ -77,7 +90,6 @@ jobs:
         run: |
           dotnet build src/Iciclecreek.Avalonia.TerminalWindow/*.csproj \
             --configuration Release \
-            -p:RestoreAdditionalProjectSources=${{ env.FEED }} \
             -p:PackageId=${{ env.PACKAGE_ID }} \
             -p:AssemblyName=${{ env.PACKAGE_ID }} \
             -p:Version=${{ steps.v.outputs.version }} \
@@ -89,7 +101,6 @@ jobs:
         run: |
           dotnet pack src/Iciclecreek.Avalonia.TerminalWindow/*.csproj \
             --no-build \
-            -p:RestoreAdditionalProjectSources=${{ env.FEED }} \
             --configuration Release \
             --output artifacts \
             -p:PackageId=${{ env.PACKAGE_ID }} \
