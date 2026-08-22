@@ -53,13 +53,14 @@ public class TerminalScrollTests
     /// tail, so an absolute baseline read before layout has settled measures a position that will move.</summary>
     private static int LinesAboveTail(TerminalView view) => view.MaxScrollback - view.ViewportY;
 
-    private static void WithTerminal(Action<Window, TerminalView> body) =>
-        HeadlessUi.Run(() =>
-        {
-            var (window, view) = ShowTerminal();
-            try { body(window, view); }
-            finally { window.Close(); }
-        });
+    // No dispatch here: every caller is an [AvaloniaTest], so the body is already on the UI thread.
+    // This just owns the window's lifetime.
+    private static void WithTerminal(Action<Window, TerminalView> body)
+    {
+        var (window, view) = ShowTerminal();
+        try { body(window, view); }
+        finally { window.Close(); }
+    }
 
     private static void Wheel(Window window, double deltaY, int times = 1)
     {
@@ -67,7 +68,7 @@ public class TerminalScrollTests
             window.MouseWheel(new Point(50, 50), new Vector(0, deltaY));
     }
 
-    [TestMethod]
+    [AvaloniaTest]
     public void NotchedWheel_ScrollsThreeLines()
     {
         WithTerminal((window, view) =>
@@ -79,7 +80,7 @@ public class TerminalScrollTests
         });
     }
 
-    [TestMethod]
+    [AvaloniaTest]
     public void TrackpadFractions_AccumulateInsteadOfRoundingToNothing()
     {
         WithTerminal((window, view) =>
@@ -93,7 +94,7 @@ public class TerminalScrollTests
         });
     }
 
-    [TestMethod]
+    [AvaloniaTest]
     public void WheelOverBlankSpace_StillReachesTheTerminal()
     {
         WithTerminal((window, view) =>
@@ -107,7 +108,7 @@ public class TerminalScrollTests
         });
     }
 
-    [TestMethod]
+    [AvaloniaTest]
     public void ReversingDirection_AnswersOnTheFirstEvent()
     {
         WithTerminal((window, view) =>
@@ -126,7 +127,7 @@ public class TerminalScrollTests
         });
     }
 
-    [TestMethod]
+    [AvaloniaTest]
     public void ScrollUp_StopsFollowingTheTail_AndFollowTailReturnsToIt()
     {
         WithTerminal((window, view) =>
@@ -146,7 +147,7 @@ public class TerminalScrollTests
         });
     }
 
-    [TestMethod]
+    [AvaloniaTest]
     public void TrimmedScrollback_KeepsTheParkedViewOverTheSameContent()
     {
         WithTerminal((window, view) =>
@@ -174,7 +175,7 @@ public class TerminalScrollTests
         });
     }
 
-    [TestMethod]
+    [AvaloniaTest]
     public void AutoScrollToBottom_False_MakesFollowTailANoOp()
     {
         WithTerminal((window, view) =>

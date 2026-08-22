@@ -32,8 +32,8 @@ namespace Iciclecreek.Terminal.Tests;
 [TestClass]
 public class ReaderThreadTests
 {
-    [TestMethod]
-    public void The_read_loop_does_not_run_on_the_thread_pool() => HeadlessUi.RunAsync(async () =>
+    [AvaloniaTest]
+    public async Task The_read_loop_does_not_run_on_the_thread_pool()
     {
         var connection = new ThreadRecordingConnection();
 
@@ -50,7 +50,7 @@ public class ReaderThreadTests
             connection.SecondReadWasOnThePool,
             "the PTY read loop ran on a thread-pool thread. LongRunning does not survive an await that "
             + "yields, so the loop must read SYNCHRONOUSLY on the thread it was handed.");
-    });
+    }
 
     /// <summary>
     /// Records which kind of thread issued the SECOND read, and makes the first one genuinely yield.

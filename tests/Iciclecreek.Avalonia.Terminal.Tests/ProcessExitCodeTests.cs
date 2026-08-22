@@ -63,33 +63,29 @@ public class ProcessExitCodeTests
         return done == exited.Task ? exited.Task.Result : null;
     }
 
-    [TestMethod]
-    public void A_nonzero_exit_code_is_reported_faithfully()
+    [AvaloniaTest]
+    public async Task A_nonzero_exit_code_is_reported_faithfully()
     {
         if (!Posix) Assert.Inconclusive("POSIX only");
-        HeadlessUi.RunAsync(async () =>
-        {
-            var seen = await ReportedExitCodes(3);
-            var detail = " Saw: " + string.Join(",", seen.Select(c => c?.ToString() ?? "none"));
 
-            seen.Should().Contain(c => c.HasValue, "the exit path has to work at all." + detail);
-            seen.Where(c => c.HasValue).Should().OnlyContain(c => c == 3,
-                "a reported code that is not 3 is a host being told the wrong outcome." + detail);
-        });
+        var seen = await ReportedExitCodes(3);
+        var detail = " Saw: " + string.Join(",", seen.Select(c => c?.ToString() ?? "none"));
+
+        seen.Should().Contain(c => c.HasValue, "the exit path has to work at all." + detail);
+        seen.Where(c => c.HasValue).Should().OnlyContain(c => c == 3,
+            "a reported code that is not 3 is a host being told the wrong outcome." + detail);
     }
 
-    [TestMethod]
-    public void A_clean_exit_is_reported_as_zero()
+    [AvaloniaTest]
+    public async Task A_clean_exit_is_reported_as_zero()
     {
         if (!Posix) Assert.Inconclusive("POSIX only");
-        HeadlessUi.RunAsync(async () =>
-        {
-            var seen = await ReportedExitCodes(0);
-            var detail = " Saw: " + string.Join(",", seen.Select(c => c?.ToString() ?? "none"));
 
-            seen.Should().Contain(c => c.HasValue, "the exit path has to work at all." + detail);
-            seen.Where(c => c.HasValue).Should().OnlyContain(c => c == 0, detail);
-        });
+        var seen = await ReportedExitCodes(0);
+        var detail = " Saw: " + string.Join(",", seen.Select(c => c?.ToString() ?? "none"));
+
+        seen.Should().Contain(c => c.HasValue, "the exit path has to work at all." + detail);
+        seen.Where(c => c.HasValue).Should().OnlyContain(c => c == 0, detail);
     }
 
     // ── The deterministic guard ─────────────────────────────────────────────────────────────────
@@ -157,8 +153,8 @@ public class ProcessExitCodeTests
     /// process ACTUALLY returned, which means not reading the exit code until the child has been
     /// reaped. Before the fix this reported 0 for a process that returned 3, every time.
     /// </summary>
-    [TestMethod]
-    public void An_exit_seen_only_as_EOF_still_reports_the_real_code() => HeadlessUi.RunAsync(async () =>
+    [AvaloniaTest]
+    public async Task An_exit_seen_only_as_EOF_still_reports_the_real_code()
     {
         var view = new TerminalView { Process = "" };
         var window = HeadlessUi.Show(view);
@@ -177,7 +173,7 @@ public class ProcessExitCodeTests
         connection.WasWaitedOn.Should().BeTrue("the reap is what makes the code readable");
 
         window.Close();
-    });
+    }
 
     /// <summary>
     /// A child that will not reap inside the grace period leaves no trustworthy exit code — and
@@ -196,8 +192,8 @@ public class ProcessExitCodeTests
     /// This test asserts the first 200ms, which is the part that must not change: the authoritative
     /// event still gets its window.</para>
     /// </summary>
-    [TestMethod]
-    public void A_child_that_will_not_reap_defers_to_the_real_event() => HeadlessUi.RunAsync(async () =>
+    [AvaloniaTest]
+    public async Task A_child_that_will_not_reap_defers_to_the_real_event()
     {
         var view = new TerminalView { Process = "" };
         var window = HeadlessUi.Show(view);
@@ -222,7 +218,7 @@ public class ProcessExitCodeTests
         view.IsLive.Should().BeTrue("a failed reap must not claim the exit and lock the real event out");
 
         window.Close();
-    });
+    }
 
     /// <summary>
     /// A child that misses the read loop's grace period but reaps a moment later must still be
@@ -240,8 +236,8 @@ public class ProcessExitCodeTests
     /// <para>Modelled rather than raced, for the same reason as the test above: racing a real shell
     /// reproduces this only under load, and a guard that needs luck is not a guard.</para>
     /// </summary>
-    [TestMethod]
-    public void A_child_that_reaps_late_is_still_reported() => HeadlessUi.RunAsync(async () =>
+    [AvaloniaTest]
+    public async Task A_child_that_reaps_late_is_still_reported()
     {
         var view = new TerminalView { Process = "" };
         var window = HeadlessUi.Show(view);
@@ -263,7 +259,7 @@ public class ProcessExitCodeTests
             "a late reap still yields the REAL code — giving up was what lost it");
 
         window.Close();
-    });
+    }
 
     // ── The relaunch race ───────────────────────────────────────────────────────────────────────
 
@@ -276,8 +272,8 @@ public class ProcessExitCodeTests
     /// the named operation and the side effect of cleanup must agree, or having both is worse than
     /// having one.</para>
     /// </summary>
-    [TestMethod]
-    public void DetachConnection_hands_the_connection_back_alive() => HeadlessUi.RunAsync(async () =>
+    [AvaloniaTest]
+    public async Task DetachConnection_hands_the_connection_back_alive()
     {
         var view = new TerminalView();
         var window = HeadlessUi.Show(view);
@@ -298,7 +294,7 @@ public class ProcessExitCodeTests
         attached.Release();
         await Task.Yield();
         window.Close();
-    });
+    }
 
     /// <summary>
     /// A connection whose reader BLOCKS until it is released, then returns EOF — which is what a real one does
@@ -320,8 +316,8 @@ public class ProcessExitCodeTests
     /// satisfies the contract no matter what the view does, which is how the earlier revision of this branch
     /// passed its tests while disposing every attached connection.</para>
     /// </summary>
-    [TestMethod]
-    public void An_attached_connection_is_neither_killed_nor_disposed() => HeadlessUi.RunAsync(async () =>
+    [AvaloniaTest]
+    public async Task An_attached_connection_is_neither_killed_nor_disposed()
     {
         var view = new TerminalView();
         var window = HeadlessUi.Show(view);
@@ -339,7 +335,7 @@ public class ProcessExitCodeTests
             + "the process behind a pane it merely closed");
 
         attached.Release();
-    });
+    }
 
     private sealed class ParkedUntilReleased : IPtyConnection
     {
@@ -402,8 +398,8 @@ public class ProcessExitCodeTests
     /// SUCCEEDS — because the flag it finds was reset for the new process. The visible result is a
     /// freshly-started terminal that immediately prints the previous process's exit and reports itself dead.</para>
     /// </summary>
-    [TestMethod]
-    public void A_Stale_Read_Loop_Cannot_Report_An_Exit_Against_Its_Successor() => HeadlessUi.RunAsync(async () =>
+    [AvaloniaTest]
+    public async Task A_Stale_Read_Loop_Cannot_Report_An_Exit_Against_Its_Successor()
     {
         var view = new TerminalView { Process = "" };
         var window = HeadlessUi.Show(view);
@@ -436,5 +432,5 @@ public class ProcessExitCodeTests
 
         second.Release();
         HeadlessUi.Pump(window);
-    });
+    }
 }
