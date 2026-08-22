@@ -691,7 +691,20 @@ namespace Iciclecreek.Terminal
         /// True while a PTY is attached and its process has not been reaped — the dormant/live
         /// distinction a host wrapper draws. A view that has never launched, or whose process exited, is false.
         /// </summary>
-        public bool IsLive => _ptyConnection != null && Volatile.Read(ref _processExitHandled) == 0;
+        public bool IsLive
+        {
+            get
+            {
+                // Under the gate, because the two halves only mean anything together. InstallConnection
+                // publishes the connection and resets the interlock as one step; reading them outside can
+                // catch the new connection paired with the old flag for a moment after an attach, and report
+                // a freshly attached PTY as not live.
+                lock (_exitGate)
+                {
+                    return _ptyConnection != null && Volatile.Read(ref _processExitHandled) == 0;
+                }
+            }
+        }
 
         /// <summary>
         /// Write straight to the PTY. A dormant view can buffer the keystroke that woke it and replay it
@@ -3054,16 +3067,22 @@ namespace Iciclecreek.Terminal
                 {
                     // Unsubscribe from event before cleanup
                     _ptyConnection.ProcessExited -= OnPtyProcessExited;
-                    // An ATTACHED connection belongs to its owner — never kill it. Closing or re-parenting a
-                    // viewer pane must not stop the process behind it. Dispose still runs: on an attached
-                    // connection that IS the detach (it drops this pane's subscription), so a closed pane
-                    // leaves nothing streaming behind it.
+
+                    // An ATTACHED connection belongs to its owner: neither killed NOR disposed. Closing or
+                    // re-parenting a view must not stop the process behind it, and Dispose does stop it —
+                    // disposing without any Kill() leaves the child dead within 300ms on both Windows
+                    // (PseudoConsoleConnection) and Unix, where closing the master fd sends SIGHUP to the
+                    // foreground process group. An earlier revision of this code disposed unconditionally and
+                    // described it as the detach; it was the opposite.
+                    //
+                    // Detaching needs nothing from Dispose. The unsubscribe above drops this view's event, and
+                    // the cancelled _processCts plus the read loop's ReferenceEquals check stop the reader.
+                    // Disposing an object the view does not own would be wrong even if the process survived it.
                     if (!_externalConnection)
                     {
                         _ptyConnection.Kill();
+                        _ptyConnection.Dispose();
                     }
-
-                    _ptyConnection.Dispose();
                 }
                 catch
                 {

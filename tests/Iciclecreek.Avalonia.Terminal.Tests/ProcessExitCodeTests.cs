@@ -273,6 +273,41 @@ public class ProcessExitCodeTests
     /// FileStream, so cancellation does not reliably interrupt it: the read returns, and whichever loop was
     /// sitting in it wakes up holding a connection that may no longer be the live one.
     /// </summary>
+
+    /// <summary>
+    /// An attached connection must survive the view: not killed, and NOT DISPOSED.
+    ///
+    /// <para>Disposing is not a neutral detach — it ends the child. Measured on both platforms, with no
+    /// <c>Kill()</c> anywhere: the process is gone within 300ms on Windows (<c>PseudoConsoleConnection</c>)
+    /// and on Unix, where closing the master fd sends <c>SIGHUP</c> to the foreground process group. So a
+    /// host that closes a pane or re-parents a view would lose the process it owns — the exact thing
+    /// <see cref="TerminalView.AttachConnection"/> exists to make safe.</para>
+    ///
+    /// <para>This assertion is why the fake records disposal at all. A fake whose <c>Dispose</c> is a no-op
+    /// satisfies the contract no matter what the view does, which is how the earlier revision of this branch
+    /// passed its tests while disposing every attached connection.</para>
+    /// </summary>
+    [TestMethod]
+    public void An_attached_connection_is_neither_killed_nor_disposed() => HeadlessUi.RunAsync(async () =>
+    {
+        var view = new TerminalView();
+        var window = HeadlessUi.Show(view);
+        var attached = new ParkedUntilReleased(realExitCode: 0);
+
+        view.AttachConnection(attached);
+        view.IsLive.Should().BeTrue("the view was just handed a live connection");
+
+        // Replacing it is the detach path a pane close or re-parent takes.
+        view.AttachConnection(new ParkedUntilReleased(realExitCode: 0));
+        await Task.Yield();
+
+        attached.Disposed.Should().BeFalse(
+            "the view disposed a connection it does not own; disposing ends the child, so a host would lose "
+            + "the process behind a pane it merely closed");
+
+        attached.Release();
+    });
+
     private sealed class ParkedUntilReleased : IPtyConnection
     {
         private readonly ManualResetEventSlim _release = new(false);
@@ -292,7 +327,15 @@ public class ProcessExitCodeTests
         public int Pid => -1;
         public void Kill() { }
         public void Resize(int columns, int rows) { }
-        public void Dispose() => _release.Set();
+        /// <summary>Whether the view disposed this connection. It must not, for an attached one.</summary>
+        public bool Disposed { get; private set; }
+
+        public void Dispose()
+        {
+            Disposed = true;
+            _release.Set();
+        }
+
         public event EventHandler<PtyExitedEventArgs>? ProcessExited { add { } remove { } }
 
         private sealed class BlockingEofStream(ManualResetEventSlim release) : Stream
@@ -346,7 +389,9 @@ public class ProcessExitCodeTests
         await Task.Delay(50);
 
         // Now let the FIRST connection's parked read return EOF. Its loop wakes holding a connection the view
-        // no longer owns.
+        // no longer owns. This line is what frees it: an attached connection is not disposed on replacement,
+        // so nothing else has set the gate. (It was not always load-bearing — while the view still disposed
+        // attached connections, the replacement above freed the read and this call only looked like it did.)
         first.Release();
         await Task.Delay(400);
 
