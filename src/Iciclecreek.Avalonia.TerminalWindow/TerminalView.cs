@@ -1871,6 +1871,12 @@ namespace Iciclecreek.Terminal
 
         private bool TryExtendKeyboardSelection(KeyEventArgs e)
         {
+            // Only the navigation keys are claimed, and the check comes BEFORE anything is recorded: the
+            // re-anchor below used to run first, so an unrelated shifted keystroke left an anchor set with
+            // no selection behind it.
+            if (e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End))
+                return false;
+
             NoteInputStart();
 
             // Shift alone moves by a cell; Ctrl+Shift and Alt+Shift move by a WORD, matching every text
@@ -1879,8 +1885,11 @@ namespace Iciclecreek.Terminal
             // Ctrl+Shift used to match neither this gate nor the word-motion one below, so it fell through
             // to the blanket selection-clear and then sent the modified-cursor sequence to the shell — which
             // moved the cursor by a word and dropped the selection on the way. Reported as #63.
-            bool byWord = e.KeyModifiers is (KeyModifiers.Control | KeyModifiers.Shift)
-                                         or (KeyModifiers.Alt | KeyModifiers.Shift);
+            // Word-wise movement is horizontal only. Without the key check, Ctrl/Alt+Shift with Up, Down,
+            // Home or End would be swallowed here too, and those chords belong to the application.
+            bool byWord = e.Key is Key.Left or Key.Right
+                          && e.KeyModifiers is (KeyModifiers.Control | KeyModifiers.Shift)
+                                            or (KeyModifiers.Alt | KeyModifiers.Shift);
 
             // macOS keyboards have no Home/End, so Cmd+arrow is the platform's line-start/line-end and
             // Cmd+Shift+arrow is its select-to-line-edge. Treated as an alias for Shift+Home / Shift+End
@@ -2003,10 +2012,16 @@ namespace Iciclecreek.Terminal
             if (line == null)
                 return from;
 
+            // Past the WHOLE glyph, not just its first cell. A width-2 character is followed by a width-0
+            // placeholder, so recording only the column the glyph starts in leaves the boundary — and the
+            // selection edge with it — in the middle of one character.
             int lastContent = -1;
             for (int x = 0; x < Math.Min(line.Length, cols); x++)
-                if (!string.IsNullOrWhiteSpace(line[x].Content))
-                    lastContent = x;
+            {
+                var cell = line[x];
+                if (!string.IsNullOrWhiteSpace(cell.Content))
+                    lastContent = x + Math.Max(0, cell.Width - 1);
+            }
 
             // Nothing on the row, or the caret is already past the content: stay put.
             int edge = row * cols + lastContent + 1;
@@ -2015,15 +2030,20 @@ namespace Iciclecreek.Terminal
 
         private int WordBoundary(int from, int direction, int cols, int lastBoundary)
         {
-            static bool IsSeparator(string? c) => string.IsNullOrWhiteSpace(c) || c.Length == 0;
+            // A wide glyph — CJK, emoji — occupies two cells: the glyph, then a width-0 PLACEHOLDER whose
+            // content is empty. Read as content that placeholder looks like whitespace, so a word scan stops
+            // between the two halves of one character and the selection covers half a glyph. It is part of
+            // the glyph before it, so it is never a separator.
+            static bool IsSeparator((string? Content, int Width) cell)
+                => cell.Width != 0 && string.IsNullOrWhiteSpace(cell.Content);
 
-            string? CellAt(int boundary)
+            (string? Content, int Width) CellAt(int boundary)
             {
                 int row = boundary / cols;
                 int col = boundary % cols;
                 var line = _terminal.Buffer.GetLine(_terminal.Buffer.ViewportY + row);
-                if (line == null || col < 0 || col >= line.Length) return null;
-                return line[col].Content;
+                if (line == null || col < 0 || col >= line.Length) return (null, 1);
+                return (line[col].Content, line[col].Width);
             }
 
             int i = Math.Clamp(from, 0, lastBoundary);
@@ -4257,7 +4277,11 @@ namespace Iciclecreek.Terminal
         {
             get
             {
-                if (_kbSelAnchor is not null)
+                // Both conditions: the anchor says a gesture is in flight, the selection says it still has
+                // something to show. Belt and braces — every path that clears one now clears the other, but
+                // a stale anchor pins the caret while the shell's cursor moves on, which is the exact
+                // failure this branch has already hit twice.
+                if (_kbSelAnchor is not null && _terminal.Selection.HasSelection)
                 {
                     int cols = Math.Max(1, _terminal.Cols);
                     return (_kbSelFocus % cols, _terminal.Buffer.ViewportY + (_kbSelFocus / cols));

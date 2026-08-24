@@ -622,4 +622,103 @@ public class ShiftSelectionTests
         view.Kill();
         window.Close();
     }
+
+    // ── Review findings ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A wide glyph occupies two cells: the character, then a width-0 placeholder. Selecting to the line
+    /// end must land past the WHOLE glyph — recording only the column it starts in leaves the boundary in
+    /// the middle of one character, and the selection covers half of it.
+    /// </summary>
+    /// <remarks>
+    /// Driven through a real shell because the cursor has to be somewhere other than the end of the line
+    /// for Shift+End to have anywhere to go, and only the shell can move it there.
+    /// </remarks>
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    public async Task Shift_end_covers_a_whole_wide_glyph()
+    {
+        var (view, window) = await RealShell();
+
+        TypeText(view, "ab\u4e16\u754c");
+        await Task.Delay(700);
+
+        Press(view, Key.Home);              // move the SHELL's cursor to the line start
+        await Task.Delay(400);
+
+        Press(view, Key.End, KeyModifiers.Shift);
+        await Task.Delay(300);
+
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("ab\u4e16\u754c"),
+            "the last glyph is selected whole, not cut in half");
+
+        view.Kill();
+        window.Close();
+    }
+
+    /// <summary>
+    /// Word movement must not stop between the two cells of one glyph. The placeholder reads as empty
+    /// content, so treating it as a separator ends the word inside the character.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task Word_selection_does_not_split_a_wide_glyph()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hi \u4e16\u754c");
+        await Task.Delay(80);
+
+        Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
+        await Task.Delay(80);
+
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("\u4e16\u754c"),
+            "both glyphs, not one and a half");
+        window.Close();
+    }
+
+    /// <summary>
+    /// Copying clears the selection, so it retires the gesture too. Leaving the anchor set pins the caret
+    /// to a boundary the shell's cursor has since moved past.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task Copying_a_selection_releases_the_caret()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello");
+        await Task.Delay(60);
+
+        Press(view, Key.Left, KeyModifiers.Shift);
+        await Task.Delay(40);
+        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity");
+
+        Press(view, Key.C, KeyModifiers.Control | KeyModifiers.Shift);   // copy, which clears
+        await Task.Delay(120);
+
+        Type(view, "world");
+        await Task.Delay(60);
+
+        Assert.That(view.CaretPosition, Is.EqualTo((view.Terminal.Buffer.X,
+                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y)),
+            "the caret is back on the shell's cursor");
+        window.Close();
+    }
+
+    /// <summary>
+    /// The word gesture is horizontal. Ctrl+Shift with a vertical key or a line-edge key belongs to the
+    /// application, and must still reach it rather than being swallowed as a local selection.
+    /// </summary>
+    [TestCase(Key.Up)]
+    [TestCase(Key.Down)]
+    [AvaloniaTest]
+    public async Task Ctrl_shift_vertical_is_not_claimed_as_a_word_gesture(Key key)
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, key, KeyModifiers.Control | KeyModifiers.Shift);
+        await Task.Delay(80);
+
+        Assert.That(pty.Written, Is.Not.Empty, $"Ctrl+Shift+{key} still reaches the application");
+        window.Close();
+    }
 }
