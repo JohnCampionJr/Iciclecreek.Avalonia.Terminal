@@ -31,21 +31,27 @@ public class ShiftSelectionTests
         => v.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = k, KeyModifiers = m });
 
     /// <summary>
-    /// One Shift+Right selects exactly ONE cell. That is the whole reason anchor and focus are caret
+    /// One Shift+Left selects exactly ONE cell. That is the whole reason anchor and focus are caret
     /// boundaries rather than cell indices — counting cells makes the first press select two.
     /// </summary>
+    /// <remarks>
+    /// Measured leftwards over written text. Rightwards from a fresh view there is nothing to select: the
+    /// grid past the input is blank, and a selection is now bounded by the end of the input.
+    /// </remarks>
     [AvaloniaTest]
-    public async Task Shift_right_selects_exactly_one_cell()
+    public async Task Shift_left_selects_exactly_one_cell()
     {
         var (view, pty, window) = LiveView();
+        Type(view, "hello");
+        await Task.Delay(60);
 
-        Press(view, Key.Right, KeyModifiers.Shift);
+        Press(view, Key.Left, KeyModifiers.Shift);
         await Task.Delay(60);
 
         Assert.That(view.Terminal.Selection.HasSelection, Is.True, "a selection started");
         Assert.That(pty.Written, Is.Empty, "and nothing was sent to the shell");
-        Assert.That(view.Terminal.Selection.GetSelectionText()?.Length ?? 0, Is.EqualTo(1),
-            "exactly one cell, not two — the reason anchor and focus are caret boundaries");
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("o"),
+            "exactly one cell, not two");
 
         window.Close();
     }
@@ -56,11 +62,14 @@ public class ShiftSelectionTests
     {
         var (view, pty, window) = LiveView();
 
-        Press(view, Key.Right, KeyModifiers.Shift);
+        Type(view, "hello");
+        await Task.Delay(60);
+
+        Press(view, Key.Left, KeyModifiers.Shift);
         await Task.Delay(40);
         Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity: something is selected");
 
-        Press(view, Key.Left, KeyModifiers.Shift);
+        Press(view, Key.Right, KeyModifiers.Shift);
         await Task.Delay(40);
 
         Assert.That(view.Terminal.Selection.HasSelection, Is.False, "back at the anchor means no selection");
@@ -115,7 +124,10 @@ public class ShiftSelectionTests
     {
         var (view, pty, window) = LiveView();
 
-        Press(view, Key.Right, KeyModifiers.Shift);
+        Type(view, "hello");
+        await Task.Delay(60);
+
+        Press(view, Key.Left, KeyModifiers.Shift);
         await Task.Delay(40);
         Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity");
 
@@ -719,6 +731,77 @@ public class ShiftSelectionTests
         await Task.Delay(80);
 
         Assert.That(pty.Written, Is.Not.Empty, $"Ctrl+Shift+{key} still reaches the application");
+        window.Close();
+    }
+
+    private static async Task<(TerminalView view, Window window)> RealZsh()
+    {
+        var view = new TerminalView
+        {
+            Process = "zsh",
+            Args = new List<string> { "-f" },
+            EnvironmentVariables = new Dictionary<string, string> { ["PROMPT"] = "zsh$ " },
+        };
+        var window = new Window { Width = 900, Height = 400, Content = view };
+        window.Show();
+        window.UpdateLayout();
+        await view.LaunchProcess();
+        view.Focus();
+        await Task.Delay(1500);
+        return (view, window);
+    }
+
+
+    /// <summary>
+    /// A selection cannot run off the end of the input into blank screen. The grid is padded to full width
+    /// with blanks, so without a ceiling Shift+Right walks into the empty rest of the screen a cell at a
+    /// time — selecting nothing, and giving the replace nothing it could do.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task Selection_stops_at_the_end_of_the_input()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hi");
+        await Task.Delay(60);
+
+        for (int i = 0; i < 8; i++)
+        {
+            Press(view, Key.Right, KeyModifiers.Shift);
+            await Task.Delay(20);
+        }
+
+        Assert.That(view.Terminal.Selection.GetSelectionText() ?? "", Is.Empty,
+            "there is nothing past the input to select");
+        window.Close();
+    }
+
+    /// <summary>
+    /// A forward selection is removed with arrow-then-backspace rather than forward-delete, because
+    /// forward-delete is not reliably bound: zsh with no rc does not know ESC[3~ and TYPES the tilde.
+    /// Asserted on what reaches the pty, since that is the whole point.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task A_forward_selection_is_erased_without_forward_delete()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello");
+        await Task.Delay(60);
+
+        // Select leftwards first so there is somewhere to select forward FROM, then back the other way.
+        Press(view, Key.Left, KeyModifiers.Shift);
+        Press(view, Key.Left, KeyModifiers.Shift);
+        Press(view, Key.Left, KeyModifiers.Shift);
+        await Task.Delay(60);
+        Press(view, Key.Home, KeyModifiers.Shift);
+        await Task.Delay(60);
+
+        var before = pty.Written;
+        Press(view, Key.Back);
+        await Task.Delay(150);
+
+        var sent = pty.Written.Substring(before.Length);
+        Assert.That(sent, Does.Not.Contain("[3~"), "no forward-delete sequence is used");
+        Assert.That(sent, Is.Not.Empty, "something was sent to remove the selection");
         window.Close();
     }
 }

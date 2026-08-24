@@ -1857,16 +1857,36 @@ namespace Iciclecreek.Terminal
             if (count == 0)
                 return string.Empty;
 
-            var key = _kbSelFocus < anchor ? XT.Input.Key.Backspace : XT.Input.Key.Delete;
-            var one = _terminal.GenerateKeyInput(key, XT.Input.KeyModifiers.None);
-            if (string.IsNullOrEmpty(one))
+            var backspace = _terminal.GenerateKeyInput(XT.Input.Key.Backspace, XT.Input.KeyModifiers.None);
+            if (string.IsNullOrEmpty(backspace))
                 return string.Empty;
+
+            // Backspace for both directions, rather than Delete for a forward selection.
+            //
+            // Forward-delete is not reliably bound. zsh started with no rc file does not know ESC[3~: it
+            // swallows the ESC[3 and TYPES the tilde, so "hello world" became "hello wor~ld" instead of
+            // losing a character. Arrow keys and Backspace are bound everywhere, so a forward selection
+            // walks the cursor to the far end first and deletes backwards from there — same result, no
+            // dependency on a binding the shell may not have.
+            string keys;
+            if (_kbSelFocus < anchor)
+            {
+                keys = string.Concat(Enumerable.Repeat(backspace, count));
+            }
+            else
+            {
+                var right = _terminal.GenerateKeyInput(XT.Input.Key.RightArrow, XT.Input.KeyModifiers.None);
+                if (string.IsNullOrEmpty(right))
+                    return string.Empty;
+                keys = string.Concat(Enumerable.Repeat(right, count))
+                     + string.Concat(Enumerable.Repeat(backspace, count));
+            }
 
             _kbSelAnchor = null;
             _terminal.Selection.ClearSelection();
             this.RequestInvalidate();
 
-            return string.Concat(Enumerable.Repeat(one, count));
+            return keys;
         }
 
         private bool TryExtendKeyboardSelection(KeyEventArgs e)
@@ -1937,7 +1957,9 @@ namespace Iciclecreek.Terminal
                 default: return false;
             }
 
-            _kbSelFocus = Math.Clamp(focus, InputStartBoundary(cols, lastBoundary), lastBoundary);
+            int floor = InputStartBoundary(cols, lastBoundary);
+            int ceiling = Math.Max(floor, InputEndBoundary(cols, lastBoundary));
+            _kbSelFocus = Math.Clamp(focus, floor, ceiling);
 
             int anchor = _kbSelAnchor.Value;
             if (_kbSelFocus == anchor)
@@ -2003,6 +2025,39 @@ namespace Iciclecreek.Terminal
                 return 0;
 
             return Math.Clamp(row * cols + _inputStartCol, 0, lastBoundary);
+        }
+
+        /// <summary>
+        /// The highest boundary a keyboard selection may reach: just past the last written cell at or after
+        /// the input start.
+        /// </summary>
+        /// <remarks>
+        /// A terminal grid is padded to full width with blanks, so without this Shift+Right walks off the
+        /// end of the input and selects the empty rest of the screen a cell at a time. There is nothing
+        /// there to select, and nothing the replace could do with it.
+        ///
+        /// Scanned backwards from the end so a wrapped input — which spans rows — is bounded by its real
+        /// end rather than by the row the caret happens to be on. Wide glyphs count their placeholder, for
+        /// the same reason <see cref="LineEndBoundary"/> does.
+        /// </remarks>
+        private int InputEndBoundary(int cols, int lastBoundary)
+        {
+            int floor = InputStartBoundary(cols, lastBoundary);
+
+            for (int b = lastBoundary - 1; b >= floor; b--)
+            {
+                int row = b / cols;
+                int col = b % cols;
+                var line = _terminal.Buffer.GetLine(_terminal.Buffer.ViewportY + row);
+                if (line == null || col >= line.Length)
+                    continue;
+
+                var cell = line[col];
+                if (!string.IsNullOrWhiteSpace(cell.Content))
+                    return Math.Min(b + Math.Max(1, cell.Width), lastBoundary);
+            }
+
+            return floor;
         }
 
         private int LineEndBoundary(int from, int cols)
