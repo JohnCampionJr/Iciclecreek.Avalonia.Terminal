@@ -1845,6 +1845,11 @@ namespace Iciclecreek.Terminal
             if (_kbSelFocus == anchor)
             {
                 _terminal.Selection.ClearSelection();
+
+                // Selection gone means the gesture is over, so the anchor goes with it — otherwise the
+                // caret stays pinned to this boundary and the next thing the shell prints moves the real
+                // cursor out from under a caret that no longer follows it.
+                _kbSelAnchor = null;
             }
             else
             {
