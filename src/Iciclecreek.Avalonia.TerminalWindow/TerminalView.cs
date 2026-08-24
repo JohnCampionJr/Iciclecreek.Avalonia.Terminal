@@ -1577,11 +1577,19 @@ namespace Iciclecreek.Terminal
                 // presses. Pressing ⌘/Ctrl/Shift on its own fires a KeyDown before the
                 // shortcut's letter arrives; clearing here would lose the selection
                 // before Cmd+C / Ctrl+Shift+C could copy it.
-                if (_terminal.Selection.HasSelection && !IsModifierKey(e.Key))
+                if (!IsModifierKey(e.Key))
                 {
-                    _terminal.Selection.ClearSelection();
+                    // The anchor is released whether or not a selection is currently drawn. A gesture can
+                    // leave the anchor set having selected NOTHING — Shift+End at the end of a line, say —
+                    // and gating this on HasSelection then leaves the caret pinned to that boundary while
+                    // typed characters append somewhere else.
                     _kbSelAnchor = null;
-                    this.RequestInvalidate();
+
+                    if (_terminal.Selection.HasSelection)
+                    {
+                        _terminal.Selection.ClearSelection();
+                        this.RequestInvalidate();
+                    }
                 }
 
                 // Handle Ctrl+Shift+V for paste (standard terminal shortcut)
@@ -1931,11 +1939,11 @@ namespace Iciclecreek.Terminal
                 return;
             }
 
-            // Clear selection when text is being input
+            // Clear selection when text is being input. The anchor goes regardless — see OnKeyDown.
+            _kbSelAnchor = null;
             if (_terminal.Selection.HasSelection)
             {
                 _terminal.Selection.ClearSelection();
-                _kbSelAnchor = null;
                 this.RequestInvalidate();
             }
 
@@ -4039,6 +4047,34 @@ namespace Iciclecreek.Terminal
             context.FillRectangle(SelectionBrush, rect);
         }
 
+        /// <summary>
+        /// Where the caret is drawn: its column, and its ABSOLUTE row (<c>YBase + Y</c> space, the same one
+        /// the viewport check uses).
+        /// </summary>
+        /// <remarks>
+        /// <para>Normally the shell's cursor. While a keyboard selection is in flight it follows the
+        /// selection's moving EDGE instead, the way it does in every text field — extending a selection and
+        /// leaving the caret behind reads as a stuck cursor.</para>
+        /// <para>Only where the caret is DRAWN changes. The shell still owns the real cursor and is never
+        /// told about this, because it must not be: the buffer position is where the shell will write next,
+        /// and moving it to follow a selection would put the next output in the wrong place.</para>
+        /// <para>Internal rather than private so this is directly assertable. It is otherwise only
+        /// observable as pixels, and the test suite runs on the headless drawing backend.</para>
+        /// </remarks>
+        internal (int Column, int AbsoluteRow) CaretPosition
+        {
+            get
+            {
+                if (_kbSelAnchor is not null)
+                {
+                    int cols = Math.Max(1, _terminal.Cols);
+                    return (_kbSelFocus % cols, _terminal.Buffer.ViewportY + (_kbSelFocus / cols));
+                }
+
+                return (_terminal.Buffer.X, _terminal.Buffer.YBase + _terminal.Buffer.Y);
+            }
+        }
+
         private void RenderCursor(DrawingContext context, int viewportY, double scale)
         {
             // No process, no cursor. The checks below are all about what the BUFFER says, and a buffer says
@@ -4057,26 +4093,7 @@ namespace Iciclecreek.Terminal
             if (!_cursorBlinkOn)
                 return;
 
-            // Get cursor position relative to viewport
-            int cursorX = _terminal.Buffer.X;
-            int cursorY = _terminal.Buffer.Y;
-
-            // The cursor Y is relative to the active screen area, need to check if it's visible
-            // when scrolled. Cursor is at absolute position: Buffer.YBase + Buffer.Y
-            int absoluteCursorY = _terminal.Buffer.YBase + cursorY;
-
-            // While a keyboard selection is in flight, the caret follows its moving EDGE, the way it does in
-            // every text field — extending a selection and leaving the caret behind reads as a stuck cursor.
-            //
-            // Only where the caret is DRAWN changes. The shell still owns the real cursor and is never told
-            // about this, because it must not be: the buffer position is where the shell will write next,
-            // and moving it to follow a selection would put the next output in the wrong place.
-            if (_kbSelAnchor is not null)
-            {
-                int selCols = Math.Max(1, _terminal.Cols);
-                cursorX = _kbSelFocus % selCols;
-                absoluteCursorY = _terminal.Buffer.ViewportY + (_kbSelFocus / selCols);
-            }
+            var (cursorX, absoluteCursorY) = CaretPosition;
 
             // Check if cursor is visible in current viewport
             if (absoluteCursorY < viewportY || absoluteCursorY >= viewportY + _terminal.Rows)

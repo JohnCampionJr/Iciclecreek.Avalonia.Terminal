@@ -335,4 +335,78 @@ public class ShiftSelectionTests
         Assert.That(pty.Written, Is.Empty, "a selection gesture is not shell input");
         window.Close();
     }
+
+    // ── Where the caret is drawn ────────────────────────────────────────────────────────────────
+
+    /// <summary>The caret follows the selection's moving edge, as it does in every text field.</summary>
+    [AvaloniaTest]
+    public async Task The_caret_follows_the_selection_edge()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        var atCursor = view.CaretPosition;
+
+        Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
+        await Task.Delay(40);
+
+        Assert.That(view.CaretPosition, Is.Not.EqualTo(atCursor), "it moved with the selection");
+        Assert.That(view.CaretPosition.Column, Is.EqualTo(atCursor.Column - "world".Length),
+            "to the start of the selected word");
+
+        window.Close();
+    }
+
+    /// <summary>
+    /// A gesture can leave the anchor set having selected NOTHING — Shift+End at the end of a line. Release
+    /// it anyway, or the caret stays pinned to a boundary the cursor has since moved away from, and typed
+    /// characters append somewhere the caret is not. That is what was reported against the sample.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task A_gesture_that_selects_nothing_still_releases_the_caret()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello");
+        await Task.Delay(60);
+
+        Press(view, Key.End, KeyModifiers.Shift);
+        await Task.Delay(40);
+        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "sanity: nothing was selected");
+
+        Press(view, Key.X);
+        await Task.Delay(40);
+
+        // The shell echoing input moves the real cursor on; the caret has to go with it.
+        Type(view, "world");
+        await Task.Delay(60);
+
+        Assert.That(view.CaretPosition, Is.EqualTo((view.Terminal.Buffer.X,
+                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y)),
+            "the caret is back on the shell's cursor, not pinned to the retired gesture");
+
+        window.Close();
+    }
+
+    /// <summary>The same for the collapse path: un-selecting also retires the gesture.</summary>
+    [AvaloniaTest]
+    public async Task Collapsing_a_selection_releases_the_caret()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello");
+        await Task.Delay(60);
+
+        Press(view, Key.Left, KeyModifiers.Shift);
+        await Task.Delay(40);
+        Press(view, Key.Right, KeyModifiers.Shift);
+        await Task.Delay(40);
+        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "sanity: collapsed");
+
+        Type(view, "world");
+        await Task.Delay(60);
+
+        Assert.That(view.CaretPosition, Is.EqualTo((view.Terminal.Buffer.X,
+                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y)));
+        window.Close();
+    }
 }
