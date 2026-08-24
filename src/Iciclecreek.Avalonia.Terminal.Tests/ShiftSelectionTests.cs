@@ -461,25 +461,31 @@ public class ShiftSelectionTests
     public async Task Typing_over_a_backwards_selection_replaces_it()
     {
         var (view, window) = await RealShell();
+        try
+        {
 
-        TypeText(view, "hello world");
-        await Task.Delay(700);
-        Assert.That(CursorRow(view), Does.EndWith("hello world"), "sanity");
+            TypeText(view, "hello world");
+            await Task.Delay(700);
+            Assert.That(CursorRow(view), Does.EndWith("hello world"), "sanity");
 
-        Press(view, Key.Left, KeyModifiers.Shift);
-        Press(view, Key.Left, KeyModifiers.Shift);
-        Press(view, Key.Left, KeyModifiers.Shift);
-        await Task.Delay(300);
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity: selected the tail");
+            Press(view, Key.Left, KeyModifiers.Shift);
+            Press(view, Key.Left, KeyModifiers.Shift);
+            Press(view, Key.Left, KeyModifiers.Shift);
+            await Task.Delay(300);
+            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity: selected the tail");
 
-        TypeText(view, "Z");
-        await Task.Delay(900);
+            TypeText(view, "Z");
+            await Task.Delay(900);
 
-        Assert.That(CursorRow(view), Does.EndWith("hello woZ"),
-            "the selected text is gone and the typed character took its place");
+            Assert.That(CursorRow(view), Does.EndWith("hello woZ"),
+                "the selected text is gone and the typed character took its place");
 
-        view.Kill();
-        window.Close();
+        }
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 
     /// <summary>A word-wise selection replaces the same way.</summary>
@@ -488,21 +494,27 @@ public class ShiftSelectionTests
     public async Task Typing_over_a_word_selection_replaces_it()
     {
         var (view, window) = await RealShell();
+        try
+        {
 
-        TypeText(view, "hello world");
-        await Task.Delay(700);
+            TypeText(view, "hello world");
+            await Task.Delay(700);
 
-        Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
-        await Task.Delay(300);
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+            Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
+            await Task.Delay(300);
+            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
 
-        TypeText(view, "there");
-        await Task.Delay(900);
+            TypeText(view, "there");
+            await Task.Delay(900);
 
-        Assert.That(CursorRow(view), Does.EndWith("hello there"));
+            Assert.That(CursorRow(view), Does.EndWith("hello there"));
 
-        view.Kill();
-        window.Close();
+        }
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 
     /// <summary>
@@ -515,20 +527,26 @@ public class ShiftSelectionTests
     public async Task A_selection_stops_at_the_prompt_edge()
     {
         var (view, window) = await RealShell();
+        try
+        {
 
-        TypeText(view, "hello world");
-        await Task.Delay(700);
-        var row = CursorRow(view);
-        Assert.That(row, Does.Contain("$ hello world"), "sanity: there is a prompt in front of the input");
+            TypeText(view, "hello world");
+            await Task.Delay(700);
+            var row = CursorRow(view);
+            Assert.That(row, Does.Contain("$ hello world"), "sanity: there is a prompt in front of the input");
 
-        Press(view, Key.Home, KeyModifiers.Shift);
-        await Task.Delay(300);
+            Press(view, Key.Home, KeyModifiers.Shift);
+            await Task.Delay(300);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
-            "the input, and none of the prompt");
+            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
+                "the input, and none of the prompt");
 
-        view.Kill();
-        window.Close();
+        }
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 
     /// <summary>Word-wise too: walking left word by word stops at the same edge.</summary>
@@ -537,21 +555,27 @@ public class ShiftSelectionTests
     public async Task Word_selection_stops_at_the_prompt_edge()
     {
         var (view, window) = await RealShell();
-
-        TypeText(view, "hello world");
-        await Task.Delay(700);
-
-        for (int i = 0; i < 6; i++)   // more presses than there are words
+        try
         {
-            Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
-            await Task.Delay(80);
+
+            TypeText(view, "hello world");
+            await Task.Delay(700);
+
+            for (int i = 0; i < 6; i++)   // more presses than there are words
+            {
+                Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
+                await Task.Delay(80);
+            }
+
+            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
+                "it stops at the input, however many times the chord is pressed");
+
         }
-
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
-            "it stops at the input, however many times the chord is pressed");
-
-        view.Kill();
-        window.Close();
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 
     /// <summary>
@@ -565,24 +589,30 @@ public class ShiftSelectionTests
     public async Task Erasing_a_backwards_selection_removes_all_of_it(Key key)
     {
         var (view, window) = await RealShell();
+        try
+        {
 
-        TypeText(view, "hello world");
-        await Task.Delay(700);
+            TypeText(view, "hello world");
+            await Task.Delay(700);
 
-        Press(view, Key.Left, KeyModifiers.Shift);
-        Press(view, Key.Left, KeyModifiers.Shift);
-        Press(view, Key.Left, KeyModifiers.Shift);
-        await Task.Delay(300);
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity");
+            Press(view, Key.Left, KeyModifiers.Shift);
+            Press(view, Key.Left, KeyModifiers.Shift);
+            Press(view, Key.Left, KeyModifiers.Shift);
+            await Task.Delay(300);
+            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity");
 
-        Press(view, key);
-        await Task.Delay(900);
+            Press(view, key);
+            await Task.Delay(900);
 
-        Assert.That(CursorRow(view), Does.EndWith("hello wo"),
-            $"{key} removed the selection, and nothing more");
+            Assert.That(CursorRow(view), Does.EndWith("hello wo"),
+                $"{key} removed the selection, and nothing more");
 
-        view.Kill();
-        window.Close();
+        }
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 
     /// <summary>The same for a word-wise selection, which is the longer one.</summary>
@@ -593,27 +623,33 @@ public class ShiftSelectionTests
     public async Task Erasing_a_word_selection_removes_the_word(Key key)
     {
         var (view, window) = await RealShell();
+        try
+        {
 
-        TypeText(view, "hello world");
-        await Task.Delay(700);
+            TypeText(view, "hello world");
+            await Task.Delay(700);
 
-        Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
-        await Task.Delay(300);
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+            Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
+            await Task.Delay(300);
+            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
 
-        Press(view, key);
-        await Task.Delay(900);
+            Press(view, key);
+            await Task.Delay(900);
 
-        // Typing a marker afterwards, because the row helper trims: "hello " and "hello" are otherwise
-        // indistinguishable, and the difference is exactly whether the separating space survived.
-        TypeText(view, "X");
-        await Task.Delay(700);
+            // Typing a marker afterwards, because the row helper trims: "hello " and "hello" are otherwise
+            // indistinguishable, and the difference is exactly whether the separating space survived.
+            TypeText(view, "X");
+            await Task.Delay(700);
 
-        Assert.That(CursorRow(view), Does.EndWith("hello X"),
-            "the word went and the space before it stayed");
+            Assert.That(CursorRow(view), Does.EndWith("hello X"),
+                "the word went and the space before it stayed");
 
-        view.Kill();
-        window.Close();
+        }
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 
     /// <summary>With nothing selected, Backspace still deletes exactly one character.</summary>
@@ -622,17 +658,23 @@ public class ShiftSelectionTests
     public async Task Backspace_without_a_selection_is_unchanged()
     {
         var (view, window) = await RealShell();
+        try
+        {
 
-        TypeText(view, "hello world");
-        await Task.Delay(700);
+            TypeText(view, "hello world");
+            await Task.Delay(700);
 
-        Press(view, Key.Back);
-        await Task.Delay(900);
+            Press(view, Key.Back);
+            await Task.Delay(900);
 
-        Assert.That(CursorRow(view), Does.EndWith("hello worl"), "one character, as before");
+            Assert.That(CursorRow(view), Does.EndWith("hello worl"), "one character, as before");
 
-        view.Kill();
-        window.Close();
+        }
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 
     // ── Review findings ─────────────────────────────────────────────────────────────────────────
@@ -651,21 +693,27 @@ public class ShiftSelectionTests
     public async Task Shift_end_covers_a_whole_wide_glyph()
     {
         var (view, window) = await RealShell();
+        try
+        {
 
-        TypeText(view, "ab\u4e16\u754c");
-        await Task.Delay(700);
+            TypeText(view, "ab\u4e16\u754c");
+            await Task.Delay(700);
 
-        Press(view, Key.Home);              // move the SHELL's cursor to the line start
-        await Task.Delay(400);
+            Press(view, Key.Home);              // move the SHELL's cursor to the line start
+            await Task.Delay(400);
 
-        Press(view, Key.End, KeyModifiers.Shift);
-        await Task.Delay(300);
+            Press(view, Key.End, KeyModifiers.Shift);
+            await Task.Delay(300);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("ab\u4e16\u754c"),
-            "the last glyph is selected whole, not cut in half");
+            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("ab\u4e16\u754c"),
+                "the last glyph is selected whole, not cut in half");
 
-        view.Kill();
-        window.Close();
+        }
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 
     /// <summary>
@@ -776,32 +824,46 @@ public class ShiftSelectionTests
     }
 
     /// <summary>
-    /// A forward selection is removed with arrow-then-backspace rather than forward-delete, because
-    /// forward-delete is not reliably bound: zsh with no rc does not know ESC[3~ and TYPES the tilde.
-    /// Asserted on what reaches the pty, since that is the whole point.
+    /// A FORWARD selection — focus past the anchor — is removed by walking the cursor right and deleting
+    /// backwards, never by forward-delete, which is not reliably bound: zsh with no rc does not know ESC[3~
+    /// and types the tilde instead.
     /// </summary>
+    /// <remarks>
+    /// The first version of this test pressed Shift+Left and then Shift+Home, which leaves the focus BELOW
+    /// the anchor — a backwards selection, taking the Backspace-only path. It asserted the absence of a
+    /// forward-delete sequence that was never going to be emitted, and would have passed against the bug.
+    /// Home first, so the shell's cursor is at the input start and Shift+Right can select forwards from it.
+    /// </remarks>
     [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
     public async Task A_forward_selection_is_erased_without_forward_delete()
     {
-        var (view, pty, window) = LiveView();
-        Type(view, "hello");
-        await Task.Delay(60);
+        var (view, window) = await RealShell();
+        try
+        {
+            TypeText(view, "hello world");
+            await Task.Delay(700);
 
-        // Select leftwards first so there is somewhere to select forward FROM, then back the other way.
-        Press(view, Key.Left, KeyModifiers.Shift);
-        Press(view, Key.Left, KeyModifiers.Shift);
-        Press(view, Key.Left, KeyModifiers.Shift);
-        await Task.Delay(60);
-        Press(view, Key.Home, KeyModifiers.Shift);
-        await Task.Delay(60);
+            Press(view, Key.Home);          // move the SHELL's cursor to the input start
+            await Task.Delay(400);
 
-        var before = pty.Written;
-        Press(view, Key.Back);
-        await Task.Delay(150);
+            Press(view, Key.Right, KeyModifiers.Shift);
+            Press(view, Key.Right, KeyModifiers.Shift);
+            Press(view, Key.Right, KeyModifiers.Shift);
+            await Task.Delay(300);
+            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hel"),
+                "sanity: a forward selection, focus past the anchor");
 
-        var sent = pty.Written.Substring(before.Length);
-        Assert.That(sent, Does.Not.Contain("[3~"), "no forward-delete sequence is used");
-        Assert.That(sent, Is.Not.Empty, "something was sent to remove the selection");
-        window.Close();
+            Press(view, Key.Back);
+            await Task.Delay(900);
+
+            Assert.That(CursorRow(view), Does.EndWith("lo world"),
+                "the selected text went, and nothing else with it");
+        }
+        finally
+        {
+            view.Kill();
+            window.Close();
+        }
     }
 }

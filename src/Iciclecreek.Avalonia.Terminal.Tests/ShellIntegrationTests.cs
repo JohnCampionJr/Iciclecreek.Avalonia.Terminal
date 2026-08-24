@@ -93,23 +93,48 @@ public class ShellIntegrationTests
     }
 
     /// <summary>
-    /// Markers are not required. Without them the heuristic still applies, so a shell with no integration
-    /// behaves as it did before.
+    /// Markers are not required, and without them the heuristic still finds the prompt edge.
     /// </summary>
+    /// <remarks>
+    /// Output is pushed through the CONNECTION rather than written straight to the emulator. Only the read
+    /// loop arms the heuristic, so a direct Terminal.Write leaves it disarmed and the test would pass while
+    /// exercising nothing — which is what the first version of this did.
+    /// </remarks>
     [AvaloniaTest]
-    public async Task Without_markers_nothing_changes()
+    public async Task Without_markers_the_heuristic_still_finds_the_prompt()
     {
-        var (view, pty, window) = LiveView();
+        var view = new TerminalView { Process = "" };
+        var window = new Window { Width = 800, Height = 600, Content = view };
+        window.Show();
+        window.UpdateLayout();
 
-        view.Terminal.Write("plain$ hello");
-        await Task.Delay(80);
+        var pty = new PushConnection();
+        view.AttachConnection(pty);
+        view.Focus();
 
-        Assert.That(view.InputStart, Is.EqualTo((-1, 0)), "nothing recorded from a silent shell");
+        // A prompt with no shell integration at all, arriving the way real output does.
+        pty.Push("plain-prompt$ ");
+        await WaitUntil(() => view.Terminal.Buffer.X >= 14, "the prompt was written");
 
-        Press(view, Key.Left, KeyModifiers.Shift);
-        await Task.Delay(80);
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "and selection still works");
+        // The heuristic samples at the first keystroke, so type one.
+        view.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = "x" });
+        await Task.Delay(120);
 
+        Assert.That(view.InputStart, Is.EqualTo((0, 14)),
+            "inferred from where the cursor stood when typing began");
+
+        pty.Done();
         window.Close();
+    }
+
+    private static async Task WaitUntil(Func<bool> condition, string because, int timeoutMs = 5000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException($"timed out waiting until {because}");
+            await Task.Delay(10);
+        }
     }
 }

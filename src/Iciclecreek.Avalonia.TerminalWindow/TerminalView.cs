@@ -1811,39 +1811,26 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
-        /// Shift + arrows / Home / End extend a buffer selection from the cursor, the way a
-        /// text field does, instead of sending the modified-cursor escape sequence to the shell.
-        /// </summary>
-        /// <remarks>
-        /// Anchor and focus are caret BOUNDARIES (<c>row * Cols + col</c> over the gaps between cells), so
-        /// one Shift+Right covers one cell and collapsing back onto the anchor clears the selection —
-        /// exactly the arithmetic an editor does. The selection API itself is inclusive-cell, so the pair
-        /// is converted at the end.
-        ///
-        /// Left alone in the alternate buffer: full-screen apps (vim, less, a TUI agent) draw their own
-        /// selection and several bind Shift+arrow, so there the sequence still belongs to the app.
-        /// </remarks>
-        /// <summary>
         /// The keystrokes that remove what a keyboard selection covers, so that typing over a selection
         /// REPLACES it the way it does in a text field. Empty when there is nothing to replace. Clears the
         /// selection as it takes it.
         /// </summary>
         /// <remarks>
         /// <para>The view cannot edit the line: the shell owns it. So the selection is turned into the
-        /// keystrokes a user would have pressed to remove it — the shell's cursor never moved from the
-        /// anchor, so a selection made leftwards is that many Backspaces and one made rightwards is that
-        /// many Deletes. The sequences come from the emulator rather than being hard-coded, so they match
-        /// whatever this terminal is configured to send.</para>
+        /// keystrokes a user would have pressed to remove it. The shell's cursor never moved from the
+        /// anchor, so a backwards selection is that many Backspaces; a forwards one walks the cursor to the
+        /// far end with the right arrow first and deletes backwards from there.</para>
+        /// <para>Backspace for both directions rather than Delete for the forward case, because
+        /// forward-delete is not reliably bound: zsh started with no rc file does not know ESC[3~ — it
+        /// swallows the ESC[3 and TYPES the tilde. Arrows and Backspace are bound everywhere.</para>
         /// <para>Returned rather than sent, so the caller can write the deletion and the new character as
-        /// ONE write. Sending them separately loses the race against the next keystroke: the handler that
-        /// owns the deletion awaits it while the handlers behind it queue their characters first, and
-        /// "there" typed over a selection arrives as "heret". Measured, not theorised.</para>
+        /// ONE write. Sending them separately loses the race against the next keystroke: the handler owning
+        /// the deletion awaits it while the handlers behind it queue their characters first, and "there"
+        /// typed over a selection arrives as "heret". Measured, not theorised.</para>
         /// <para>Only a KEYBOARD selection qualifies. A mouse selection can sit anywhere on screen,
-        /// including in the scrollback, with no fixed relationship to where the shell's cursor is — there is
-        /// no honest way to turn that into edits, so typing over one clears it without deleting, as before.
-        /// The alternate buffer is excluded for the same reason: a full-screen app owns its own editing.</para>
-        /// <para>Readline stops at the start of the input, so a selection dragged back over the prompt
-        /// deletes the input and no more rather than eating the prompt.</para>
+        /// including the scrollback, with no fixed relationship to the shell's cursor, so typing over one
+        /// clears it without deleting. The alternate buffer is excluded: a full-screen app owns its own
+        /// editing.</para>
         /// </remarks>
         private string TakeKeyboardSelectionDeletion()
         {
@@ -1889,6 +1876,41 @@ namespace Iciclecreek.Terminal
             return keys;
         }
 
+        /// <summary>
+        /// Shift + arrows / Home / End extend a buffer selection from the cursor, the way a
+        /// text field does, instead of sending the modified-cursor escape sequence to the shell.
+        /// </summary>
+        /// <remarks>
+        /// Anchor and focus are caret BOUNDARIES (<c>row * Cols + col</c> over the gaps between cells), so
+        /// one Shift+Right covers one cell and collapsing back onto the anchor clears the selection —
+        /// exactly the arithmetic an editor does. The selection API itself is inclusive-cell, so the pair
+        /// is converted at the end.
+        ///
+        /// Left alone in the alternate buffer: full-screen apps (vim, less, a TUI agent) draw their own
+        /// selection and several bind Shift+arrow, so there the sequence still belongs to the app.
+        /// </remarks>
+        /// <summary>
+        /// The keystrokes that remove what a keyboard selection covers, so that typing over a selection
+        /// REPLACES it the way it does in a text field. Empty when there is nothing to replace. Clears the
+        /// selection as it takes it.
+        /// </summary>
+        /// <remarks>
+        /// <para>The view cannot edit the line: the shell owns it. So the selection is turned into the
+        /// keystrokes a user would have pressed to remove it — the shell's cursor never moved from the
+        /// anchor, so a selection made leftwards is that many Backspaces and one made rightwards is that
+        /// many Deletes. The sequences come from the emulator rather than being hard-coded, so they match
+        /// whatever this terminal is configured to send.</para>
+        /// <para>Returned rather than sent, so the caller can write the deletion and the new character as
+        /// ONE write. Sending them separately loses the race against the next keystroke: the handler that
+        /// owns the deletion awaits it while the handlers behind it queue their characters first, and
+        /// "there" typed over a selection arrives as "heret". Measured, not theorised.</para>
+        /// <para>Only a KEYBOARD selection qualifies. A mouse selection can sit anywhere on screen,
+        /// including in the scrollback, with no fixed relationship to where the shell's cursor is — there is
+        /// no honest way to turn that into edits, so typing over one clears it without deleting, as before.
+        /// The alternate buffer is excluded for the same reason: a full-screen app owns its own editing.</para>
+        /// <para>Readline stops at the start of the input, so a selection dragged back over the prompt
+        /// deletes the input and no more rather than eating the prompt.</para>
+        /// </remarks>
         private bool TryExtendKeyboardSelection(KeyEventArgs e)
         {
             // Only the navigation keys are claimed, and the check comes BEFORE anything is recorded: the
@@ -1986,27 +2008,6 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
-        /// The next word boundary from <paramref name="from"/> in <paramref name="direction"/>, as a caret
-        /// boundary ordinal.
-        /// </summary>
-        /// <remarks>
-        /// Readline's rule, which is what a shell user already has in their fingers: skip any run of
-        /// separators, then skip the run of word characters beyond it. Moving left looks at the cell BEFORE
-        /// the caret and moving right at the cell after, because a caret sits between cells — the same
-        /// asymmetry that makes one Shift+Right cover exactly one cell.
-        ///
-        /// Always advances by at least one cell when there is room, so holding the chord cannot stall on a
-        /// boundary it is already sitting on.
-        /// </remarks>
-        /// <summary>
-        /// The caret boundary just past the last non-blank cell on <paramref name="from"/>'s row.
-        /// </summary>
-        /// <remarks>
-        /// End means "end of what is written", not "end of the grid". A terminal row is padded out to the
-        /// full width with blanks, so jumping to the row edge selects a screenful of spaces after the
-        /// prompt — the same surprise as walking a word chord into empty space.
-        /// </remarks>
-        /// <summary>
         /// The lowest boundary a keyboard selection may reach: the start of the shell's editable input when
         /// that is on screen, otherwise the top of the viewport.
         /// </summary>
@@ -2039,6 +2040,13 @@ namespace Iciclecreek.Terminal
         /// Scanned backwards from the end so a wrapped input — which spans rows — is bounded by its real
         /// end rather than by the row the caret happens to be on. Wide glyphs count their placeholder, for
         /// the same reason <see cref="LineEndBoundary"/> does.
+        ///
+        /// <para>KNOWN LIMIT: a trailing space the user typed is not counted, so a selection stops just
+        /// before it. There is no way to do better here — the emulator fills unwritten cells with spaces,
+        /// and a typed space is identical to one of those in every respect. Measured: both carry
+        /// <c>Content == " "</c>, <c>Width == 1</c> and <c>CodePoint == 32</c>. Distinguishing them needs
+        /// the buffer to record that a cell was written, which is a change in XTerm.NET rather than
+        /// here.</para>
         /// </remarks>
         private int InputEndBoundary(int cols, int lastBoundary)
         {
@@ -2060,6 +2068,36 @@ namespace Iciclecreek.Terminal
             return floor;
         }
 
+        /// <summary>
+        /// The next word boundary from <paramref name="from"/> in <paramref name="direction"/>, as a caret
+        /// boundary ordinal.
+        /// </summary>
+        /// <remarks>
+        /// Readline's rule, which is what a shell user already has in their fingers: skip any run of
+        /// separators, then skip the run of word characters beyond it. Moving left looks at the cell BEFORE
+        /// the caret and moving right at the cell after, because a caret sits between cells — the same
+        /// asymmetry that makes one Shift+Right cover exactly one cell.
+        ///
+        /// Always advances by at least one cell when there is room, so holding the chord cannot stall on a
+        /// boundary it is already sitting on.
+        /// </remarks>
+        /// <summary>
+        /// The caret boundary just past the last non-blank cell on <paramref name="from"/>'s row.
+        /// </summary>
+        /// <remarks>
+        /// End means "end of what is written", not "end of the grid". A terminal row is padded out to the
+        /// full width with blanks, so jumping to the row edge selects a screenful of spaces after the
+        /// prompt — the same surprise as walking a word chord into empty space.
+        /// </remarks>
+        /// <summary>
+        /// The lowest boundary a keyboard selection may reach: the start of the shell's editable input when
+        /// that is on screen, otherwise the top of the viewport.
+        /// </summary>
+        /// <remarks>
+        /// Selecting back over the prompt is never what the user meant — the prompt is not theirs to edit,
+        /// and readline will not delete it either, so a selection covering it could not be replaced.
+        /// Stopping the selection where the input starts keeps the two agreeing.
+        /// </remarks>
         private int LineEndBoundary(int from, int cols)
         {
             int row = from / cols;
@@ -2083,6 +2121,17 @@ namespace Iciclecreek.Terminal
             return edge > from ? edge : from;
         }
 
+        /// <summary>
+        /// The next word boundary from <paramref name="from"/> in <paramref name="direction"/>, as a caret
+        /// boundary ordinal.
+        /// </summary>
+        /// <remarks>
+        /// <para>Readline's rule, which is what a shell user already has in their fingers: skip any run of
+        /// separators, then skip the run of word characters beyond it. Moving left looks at the cell BEFORE
+        /// the caret and moving right at the cell after, because a caret sits between cells.</para>
+        /// <para>Stays put when the scan finds no word that way. A terminal's grid is mostly empty cells,
+        /// so without that a chord at the prompt selects the whole rest of the screen.</para>
+        /// </remarks>
         private int WordBoundary(int from, int direction, int cols, int lastBoundary)
         {
             // A wide glyph — CJK, emoji — occupies two cells: the glyph, then a width-0 PLACEHOLDER whose
