@@ -129,6 +129,41 @@ namespace Iciclecreek.Terminal
         // cell instead of two. Null anchor = no keyboard selection in flight.
         private int? _kbSelAnchor;
 
+        // Where the shell's editable input begins, as an absolute row and a column on it. A keyboard
+        // selection stops here rather than running back over the prompt.
+        //
+        // Derived rather than known: nothing tells a terminal where a prompt ends unless the shell emits
+        // semantic markers, which most shells do not by default. What is reliable is the moment the user
+        // FIRST types on a row the shell has just moved to — wherever the cursor is then is the end of
+        // whatever the shell drew, which is the prompt.
+        //
+        // Sampled at that keystroke rather than after the write, because a prompt does not arrive whole: on
+        // a real bash the newline and the prompt text land in separate reads, so the cursor is still at
+        // column 0 when the row changes. Measured — it recorded (row 4, col 0) instead of (row 4, col 10).
+        private int _inputStartRow = -1;
+        private int _inputStartCol;
+        private int _lastOutputRow = -1;
+        // Armed only by shell OUTPUT moving to a new row. Starting armed would let the first interaction
+        // record the input start wherever the cursor happens to be — which, if the user has already typed,
+        // is the end of their input rather than the start of it, pinning the selection to a stop.
+        private bool _inputStartPending;
+
+        internal (int Row, int Col) InputStart => (_inputStartRow, _inputStartCol);
+
+        /// <summary>
+        /// Record where the editable input starts, if the shell has moved to a new row since the last time.
+        /// Called wherever the user is about to interact with the line.
+        /// </summary>
+        private void NoteInputStart()
+        {
+            if (!_inputStartPending || _terminal == null)
+                return;
+
+            _inputStartRow = _terminal.Buffer.YBase + _terminal.Buffer.Y;
+            _inputStartCol = _terminal.Buffer.X;
+            _inputStartPending = false;
+        }
+
         // Set where a selection is retired by a keystroke that will type, and consumed by whichever path
         // then sends that character — within the same handler invocation, so it never spans two keystrokes.
         private string _pendingReplaceKeys = string.Empty;
@@ -1587,6 +1622,9 @@ namespace Iciclecreek.Terminal
                     bool willType = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0
                                     && TryGetPrintableChar(e, out _);
 
+                    if (willType)
+                        NoteInputStart();
+
                     _pendingReplaceKeys = willType ? TakeKeyboardSelectionDeletion() : string.Empty;
                     if (_pendingReplaceKeys.Length == 0)
                     {
@@ -1783,6 +1821,8 @@ namespace Iciclecreek.Terminal
 
         private bool TryExtendKeyboardSelection(KeyEventArgs e)
         {
+            NoteInputStart();
+
             // Shift alone moves by a cell; Ctrl+Shift and Alt+Shift move by a WORD, matching every text
             // field. Alt is the same gesture on macOS, where Ctrl+arrow belongs to the window manager.
             //
@@ -1832,12 +1872,13 @@ namespace Iciclecreek.Terminal
                 case Key.Right: focus = byWord ? WordBoundary(focus, +1, cols, lastBoundary) : focus + 1; break;
                 case Key.Up: focus -= cols; break;
                 case Key.Down: focus += cols; break;
-                case Key.Home: focus -= focus % cols; break;
+                case Key.Home: focus = InputStartBoundary(cols, lastBoundary) is var st && st / cols == focus / cols
+                                          ? st : focus - (focus % cols); break;
                 case Key.End: focus = LineEndBoundary(focus, cols); break;
                 default: return false;
             }
 
-            _kbSelFocus = Math.Clamp(focus, 0, lastBoundary);
+            _kbSelFocus = Math.Clamp(focus, InputStartBoundary(cols, lastBoundary), lastBoundary);
 
             int anchor = _kbSelAnchor.Value;
             if (_kbSelFocus == anchor)
@@ -1884,6 +1925,27 @@ namespace Iciclecreek.Terminal
         /// full width with blanks, so jumping to the row edge selects a screenful of spaces after the
         /// prompt — the same surprise as walking a word chord into empty space.
         /// </remarks>
+        /// <summary>
+        /// The lowest boundary a keyboard selection may reach: the start of the shell's editable input when
+        /// that is on screen, otherwise the top of the viewport.
+        /// </summary>
+        /// <remarks>
+        /// Selecting back over the prompt is never what the user meant — the prompt is not theirs to edit,
+        /// and readline will not delete it either, so a selection covering it could not be replaced.
+        /// Stopping the selection where the input starts keeps the two agreeing.
+        /// </remarks>
+        private int InputStartBoundary(int cols, int lastBoundary)
+        {
+            if (_inputStartRow < 0)
+                return 0;
+
+            int row = _inputStartRow - _terminal.Buffer.ViewportY;
+            if (row < 0 || row >= _terminal.Rows)
+                return 0;
+
+            return Math.Clamp(row * cols + _inputStartCol, 0, lastBoundary);
+        }
+
         private int LineEndBoundary(int from, int cols)
         {
             int row = from / cols;
@@ -2003,6 +2065,8 @@ namespace Iciclecreek.Terminal
 
             // Typing over a selection replaces it; failing that, the selection is simply dropped. The
             // anchor goes either way — see OnKeyDown.
+            NoteInputStart();
+
             var replaceKeys = _pendingReplaceKeys.Length > 0 ? _pendingReplaceKeys : TakeKeyboardSelectionDeletion();
             _pendingReplaceKeys = string.Empty;
             if (replaceKeys.Length == 0)
@@ -3413,6 +3477,16 @@ namespace Iciclecreek.Terminal
                     lock (_terminalLock)
                     {
                         _terminal.Write(output);
+
+                        // See _inputStartRow. A change of row means the shell drew something new, so the
+                        // recorded input start is stale — but where the prompt ENDS is not known until the
+                        // user types, since the prompt may still be arriving.
+                        int cursorRow = _terminal.Buffer.YBase + _terminal.Buffer.Y;
+                        if (cursorRow != _lastOutputRow)
+                        {
+                            _lastOutputRow = cursorRow;
+                            _inputStartPending = true;
+                        }
                     }
 
                     // Signal on the first chunk only. Posting per chunk would keep queueing UI-thread

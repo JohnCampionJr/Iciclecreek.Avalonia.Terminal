@@ -492,4 +492,53 @@ public class ShiftSelectionTests
         view.Kill();
         window.Close();
     }
+
+    /// <summary>
+    /// A selection stops where the editable input starts. Running back over the prompt is never what the
+    /// user meant — the prompt is not theirs to edit, and readline will not delete it either, so a selection
+    /// covering it could not be replaced.
+    /// </summary>
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    public async Task A_selection_stops_at_the_prompt_edge()
+    {
+        var (view, window) = await RealShell();
+
+        TypeText(view, "hello world");
+        await Task.Delay(700);
+        var row = CursorRow(view);
+        Assert.That(row, Does.Contain("$ hello world"), "sanity: there is a prompt in front of the input");
+
+        Press(view, Key.Home, KeyModifiers.Shift);
+        await Task.Delay(300);
+
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
+            "the input, and none of the prompt");
+
+        view.Kill();
+        window.Close();
+    }
+
+    /// <summary>Word-wise too: walking left word by word stops at the same edge.</summary>
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    public async Task Word_selection_stops_at_the_prompt_edge()
+    {
+        var (view, window) = await RealShell();
+
+        TypeText(view, "hello world");
+        await Task.Delay(700);
+
+        for (int i = 0; i < 6; i++)   // more presses than there are words
+        {
+            Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
+            await Task.Delay(80);
+        }
+
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
+            "it stops at the input, however many times the chord is pressed");
+
+        view.Kill();
+        window.Close();
+    }
 }
