@@ -409,4 +409,87 @@ public class ShiftSelectionTests
                                                     view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y)));
         window.Close();
     }
+
+
+    // ── Typing over a selection replaces it (against a real shell) ──────────────────────────────
+
+    private static string CursorRow(TerminalView v)
+    {
+        var line = v.Terminal.Buffer.GetLine(v.Terminal.Buffer.YBase + v.Terminal.Buffer.Y);
+        if (line == null) return "";
+        var sb = new System.Text.StringBuilder();
+        for (int x = 0; x < line.Length; x++) sb.Append(string.IsNullOrEmpty(line[x].Content) ? " " : line[x].Content);
+        return sb.ToString().TrimEnd();
+    }
+
+    private static async Task<(TerminalView view, Window window)> RealShell()
+    {
+        var view = new TerminalView { Process = "bash", Args = new List<string> { "--norc" } };
+        var window = new Window { Width = 900, Height = 400, Content = view };
+        window.Show();
+        window.UpdateLayout();
+        await view.LaunchProcess();
+        view.Focus();
+        await Task.Delay(1500);
+        return (view, window);
+    }
+
+    private static void TypeText(TerminalView v, string text)
+    {
+        foreach (var ch in text)
+            v.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = ch.ToString() });
+    }
+
+    /// <summary>
+    /// Typing over a selection replaces it, the way it does in every text field. The view cannot edit the
+    /// line — the shell owns it — so the selection becomes the keystrokes that would have removed it.
+    /// </summary>
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    public async Task Typing_over_a_backwards_selection_replaces_it()
+    {
+        var (view, window) = await RealShell();
+
+        TypeText(view, "hello world");
+        await Task.Delay(700);
+        Assert.That(CursorRow(view), Does.EndWith("hello world"), "sanity");
+
+        Press(view, Key.Left, KeyModifiers.Shift);
+        Press(view, Key.Left, KeyModifiers.Shift);
+        Press(view, Key.Left, KeyModifiers.Shift);
+        await Task.Delay(300);
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity: selected the tail");
+
+        TypeText(view, "Z");
+        await Task.Delay(900);
+
+        Assert.That(CursorRow(view), Does.EndWith("hello woZ"),
+            "the selected text is gone and the typed character took its place");
+
+        view.Kill();
+        window.Close();
+    }
+
+    /// <summary>A word-wise selection replaces the same way.</summary>
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    public async Task Typing_over_a_word_selection_replaces_it()
+    {
+        var (view, window) = await RealShell();
+
+        TypeText(view, "hello world");
+        await Task.Delay(700);
+
+        Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
+        await Task.Delay(300);
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+
+        TypeText(view, "there");
+        await Task.Delay(900);
+
+        Assert.That(CursorRow(view), Does.EndWith("hello there"));
+
+        view.Kill();
+        window.Close();
+    }
 }

@@ -128,6 +128,10 @@ namespace Iciclecreek.Terminal
         // between cells, not the cells themselves — so Shift+Right from a fresh cursor selects exactly one
         // cell instead of two. Null anchor = no keyboard selection in flight.
         private int? _kbSelAnchor;
+
+        // Set where a selection is retired by a keystroke that will type, and consumed by whichever path
+        // then sends that character — within the same handler invocation, so it never spans two keystrokes.
+        private string _pendingReplaceKeys = string.Empty;
         private int _kbSelFocus;
 
         // IME (Input Method Editor) support
@@ -1579,16 +1583,24 @@ namespace Iciclecreek.Terminal
                 // before Cmd+C / Ctrl+Shift+C could copy it.
                 if (!IsModifierKey(e.Key))
                 {
-                    // The anchor is released whether or not a selection is currently drawn. A gesture can
-                    // leave the anchor set having selected NOTHING — Shift+End at the end of a line, say —
-                    // and gating this on HasSelection then leaves the caret pinned to that boundary while
-                    // typed characters append somewhere else.
-                    _kbSelAnchor = null;
+                    // A keystroke that will TYPE replaces the selection; anything else just drops it.
+                    bool willType = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0
+                                    && TryGetPrintableChar(e, out _);
 
-                    if (_terminal.Selection.HasSelection)
+                    _pendingReplaceKeys = willType ? TakeKeyboardSelectionDeletion() : string.Empty;
+                    if (_pendingReplaceKeys.Length == 0)
                     {
-                        _terminal.Selection.ClearSelection();
-                        this.RequestInvalidate();
+                        // The anchor is released whether or not a selection is currently drawn. A gesture can
+                        // leave the anchor set having selected NOTHING — Shift+End at the end of a line, say —
+                        // and gating this on HasSelection then leaves the caret pinned to that boundary while
+                        // typed characters append somewhere else.
+                        _kbSelAnchor = null;
+
+                        if (_terminal.Selection.HasSelection)
+                        {
+                            _terminal.Selection.ClearSelection();
+                            this.RequestInvalidate();
+                        }
                     }
                 }
 
@@ -1695,7 +1707,10 @@ namespace Iciclecreek.Terminal
                 if (TryGetPrintableChar(e, out var printableChar))
                 {
                     e.Handled = true;
-                    await SendToPtyAsync(printableChar.ToString()).ConfigureAwait(false);
+                    // One write: the deletion and the character replacing it, in that order.
+                    var replaced = _pendingReplaceKeys;
+                    _pendingReplaceKeys = string.Empty;
+                    await SendToPtyAsync(replaced + printableChar).ConfigureAwait(false);
                     return;
                 }
 
@@ -1721,74 +1736,49 @@ namespace Iciclecreek.Terminal
         /// selection and several bind Shift+arrow, so there the sequence still belongs to the app.
         /// </remarks>
         /// <summary>
-        /// The next word boundary from <paramref name="from"/> in <paramref name="direction"/>, as a caret
-        /// boundary ordinal.
+        /// The keystrokes that remove what a keyboard selection covers, so that typing over a selection
+        /// REPLACES it the way it does in a text field. Empty when there is nothing to replace. Clears the
+        /// selection as it takes it.
         /// </summary>
         /// <remarks>
-        /// Readline's rule, which is what a shell user already has in their fingers: skip any run of
-        /// separators, then skip the run of word characters beyond it. Moving left looks at the cell BEFORE
-        /// the caret and moving right at the cell after, because a caret sits between cells — the same
-        /// asymmetry that makes one Shift+Right cover exactly one cell.
-        ///
-        /// Always advances by at least one cell when there is room, so holding the chord cannot stall on a
-        /// boundary it is already sitting on.
+        /// <para>The view cannot edit the line: the shell owns it. So the selection is turned into the
+        /// keystrokes a user would have pressed to remove it — the shell's cursor never moved from the
+        /// anchor, so a selection made leftwards is that many Backspaces and one made rightwards is that
+        /// many Deletes. The sequences come from the emulator rather than being hard-coded, so they match
+        /// whatever this terminal is configured to send.</para>
+        /// <para>Returned rather than sent, so the caller can write the deletion and the new character as
+        /// ONE write. Sending them separately loses the race against the next keystroke: the handler that
+        /// owns the deletion awaits it while the handlers behind it queue their characters first, and
+        /// "there" typed over a selection arrives as "heret". Measured, not theorised.</para>
+        /// <para>Only a KEYBOARD selection qualifies. A mouse selection can sit anywhere on screen,
+        /// including in the scrollback, with no fixed relationship to where the shell's cursor is — there is
+        /// no honest way to turn that into edits, so typing over one clears it without deleting, as before.
+        /// The alternate buffer is excluded for the same reason: a full-screen app owns its own editing.</para>
+        /// <para>Readline stops at the start of the input, so a selection dragged back over the prompt
+        /// deletes the input and no more rather than eating the prompt.</para>
         /// </remarks>
-        /// <summary>
-        /// The caret boundary just past the last non-blank cell on <paramref name="from"/>'s row.
-        /// </summary>
-        /// <remarks>
-        /// End means "end of what is written", not "end of the grid". A terminal row is padded out to the
-        /// full width with blanks, so jumping to the row edge selects a screenful of spaces after the
-        /// prompt — the same surprise as walking a word chord into empty space.
-        /// </remarks>
-        private int LineEndBoundary(int from, int cols)
+        private string TakeKeyboardSelectionDeletion()
         {
-            int row = from / cols;
-            var line = _terminal.Buffer.GetLine(_terminal.Buffer.ViewportY + row);
-            if (line == null)
-                return from;
+            if (_kbSelAnchor is null || !_terminal.Selection.HasSelection)
+                return string.Empty;
+            if (_terminal.IsAlternateBufferActive)
+                return string.Empty;
 
-            int lastContent = -1;
-            for (int x = 0; x < Math.Min(line.Length, cols); x++)
-                if (!string.IsNullOrWhiteSpace(line[x].Content))
-                    lastContent = x;
+            int anchor = _kbSelAnchor.Value;
+            int count = Math.Abs(anchor - _kbSelFocus);
+            if (count == 0)
+                return string.Empty;
 
-            // Nothing on the row, or the caret is already past the content: stay put.
-            int edge = row * cols + lastContent + 1;
-            return edge > from ? edge : from;
-        }
+            var key = _kbSelFocus < anchor ? XT.Input.Key.Backspace : XT.Input.Key.Delete;
+            var one = _terminal.GenerateKeyInput(key, XT.Input.KeyModifiers.None);
+            if (string.IsNullOrEmpty(one))
+                return string.Empty;
 
-        private int WordBoundary(int from, int direction, int cols, int lastBoundary)
-        {
-            static bool IsSeparator(string? c) => string.IsNullOrWhiteSpace(c) || c.Length == 0;
+            _kbSelAnchor = null;
+            _terminal.Selection.ClearSelection();
+            this.RequestInvalidate();
 
-            string? CellAt(int boundary)
-            {
-                int row = boundary / cols;
-                int col = boundary % cols;
-                var line = _terminal.Buffer.GetLine(_terminal.Buffer.ViewportY + row);
-                if (line == null || col < 0 || col >= line.Length) return null;
-                return line[col].Content;
-            }
-
-            int i = Math.Clamp(from, 0, lastBoundary);
-            bool foundWord = false;
-
-            if (direction < 0)
-            {
-                while (i > 0 && IsSeparator(CellAt(i - 1))) i--;
-                while (i > 0 && !IsSeparator(CellAt(i - 1))) { i--; foundWord = true; }
-            }
-            else
-            {
-                while (i < lastBoundary && IsSeparator(CellAt(i))) i++;
-                while (i < lastBoundary && !IsSeparator(CellAt(i))) { i++; foundWord = true; }
-            }
-
-            // Nothing but blanks that way, so there is no word to move to. Stay put rather than running to
-            // the edge of the grid: a terminal's buffer is mostly empty cells, so without this a chord at
-            // the prompt selects the whole rest of the screen — which is what it did the first time.
-            return foundWord ? i : from;
+            return string.Concat(Enumerable.Repeat(one, count));
         }
 
         private bool TryExtendKeyboardSelection(KeyEventArgs e)
@@ -1873,6 +1863,78 @@ namespace Iciclecreek.Terminal
             return true;
         }
 
+        /// <summary>
+        /// The next word boundary from <paramref name="from"/> in <paramref name="direction"/>, as a caret
+        /// boundary ordinal.
+        /// </summary>
+        /// <remarks>
+        /// Readline's rule, which is what a shell user already has in their fingers: skip any run of
+        /// separators, then skip the run of word characters beyond it. Moving left looks at the cell BEFORE
+        /// the caret and moving right at the cell after, because a caret sits between cells — the same
+        /// asymmetry that makes one Shift+Right cover exactly one cell.
+        ///
+        /// Always advances by at least one cell when there is room, so holding the chord cannot stall on a
+        /// boundary it is already sitting on.
+        /// </remarks>
+        /// <summary>
+        /// The caret boundary just past the last non-blank cell on <paramref name="from"/>'s row.
+        /// </summary>
+        /// <remarks>
+        /// End means "end of what is written", not "end of the grid". A terminal row is padded out to the
+        /// full width with blanks, so jumping to the row edge selects a screenful of spaces after the
+        /// prompt — the same surprise as walking a word chord into empty space.
+        /// </remarks>
+        private int LineEndBoundary(int from, int cols)
+        {
+            int row = from / cols;
+            var line = _terminal.Buffer.GetLine(_terminal.Buffer.ViewportY + row);
+            if (line == null)
+                return from;
+
+            int lastContent = -1;
+            for (int x = 0; x < Math.Min(line.Length, cols); x++)
+                if (!string.IsNullOrWhiteSpace(line[x].Content))
+                    lastContent = x;
+
+            // Nothing on the row, or the caret is already past the content: stay put.
+            int edge = row * cols + lastContent + 1;
+            return edge > from ? edge : from;
+        }
+
+        private int WordBoundary(int from, int direction, int cols, int lastBoundary)
+        {
+            static bool IsSeparator(string? c) => string.IsNullOrWhiteSpace(c) || c.Length == 0;
+
+            string? CellAt(int boundary)
+            {
+                int row = boundary / cols;
+                int col = boundary % cols;
+                var line = _terminal.Buffer.GetLine(_terminal.Buffer.ViewportY + row);
+                if (line == null || col < 0 || col >= line.Length) return null;
+                return line[col].Content;
+            }
+
+            int i = Math.Clamp(from, 0, lastBoundary);
+            bool foundWord = false;
+
+            if (direction < 0)
+            {
+                while (i > 0 && IsSeparator(CellAt(i - 1))) i--;
+                while (i > 0 && !IsSeparator(CellAt(i - 1))) { i--; foundWord = true; }
+            }
+            else
+            {
+                while (i < lastBoundary && IsSeparator(CellAt(i))) i++;
+                while (i < lastBoundary && !IsSeparator(CellAt(i))) { i++; foundWord = true; }
+            }
+
+            // Nothing but blanks that way, so there is no word to move to. Stay put rather than running to
+            // the edge of the grid: a terminal's buffer is mostly empty cells, so without this a chord at
+            // the prompt selects the whole rest of the screen — which is what it did the first time.
+            return foundWord ? i : from;
+        }
+
+
         protected override async void OnKeyUp(KeyEventArgs e)
         {
             // Only process input if this terminal has focus
@@ -1939,12 +2001,18 @@ namespace Iciclecreek.Terminal
                 return;
             }
 
-            // Clear selection when text is being input. The anchor goes regardless — see OnKeyDown.
-            _kbSelAnchor = null;
-            if (_terminal.Selection.HasSelection)
+            // Typing over a selection replaces it; failing that, the selection is simply dropped. The
+            // anchor goes either way — see OnKeyDown.
+            var replaceKeys = _pendingReplaceKeys.Length > 0 ? _pendingReplaceKeys : TakeKeyboardSelectionDeletion();
+            _pendingReplaceKeys = string.Empty;
+            if (replaceKeys.Length == 0)
             {
-                _terminal.Selection.ClearSelection();
-                this.RequestInvalidate();
+                _kbSelAnchor = null;
+                if (_terminal.Selection.HasSelection)
+                {
+                    _terminal.Selection.ClearSelection();
+                    this.RequestInvalidate();
+                }
             }
 
             FollowTail();   // typing returns the view to the prompt
@@ -1952,7 +2020,7 @@ namespace Iciclecreek.Terminal
             try
             {
                 Debug.WriteLine($"[TerminalView] OnTextInput: Sending '{e.Text}' to PTY");
-                await SendToPtyAsync(e.Text).ConfigureAwait(false);
+                await SendToPtyAsync(replaceKeys + e.Text).ConfigureAwait(false);
                 e.Handled = true;
             }
             catch (Exception ex)
