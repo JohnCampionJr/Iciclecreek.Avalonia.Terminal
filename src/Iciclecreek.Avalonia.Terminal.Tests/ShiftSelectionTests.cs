@@ -541,4 +541,85 @@ public class ShiftSelectionTests
         view.Kill();
         window.Close();
     }
+
+    /// <summary>
+    /// Backspace and Delete both remove a selection — either key means "get rid of what is selected" in any
+    /// text field, rather than "act on one character".
+    /// </summary>
+    [TestCase(Key.Back)]
+    [TestCase(Key.Delete)]
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    public async Task Erasing_a_backwards_selection_removes_all_of_it(Key key)
+    {
+        var (view, window) = await RealShell();
+
+        TypeText(view, "hello world");
+        await Task.Delay(700);
+
+        Press(view, Key.Left, KeyModifiers.Shift);
+        Press(view, Key.Left, KeyModifiers.Shift);
+        Press(view, Key.Left, KeyModifiers.Shift);
+        await Task.Delay(300);
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity");
+
+        Press(view, key);
+        await Task.Delay(900);
+
+        Assert.That(CursorRow(view), Does.EndWith("hello wo"),
+            $"{key} removed the selection, and nothing more");
+
+        view.Kill();
+        window.Close();
+    }
+
+    /// <summary>The same for a word-wise selection, which is the longer one.</summary>
+    [TestCase(Key.Back)]
+    [TestCase(Key.Delete)]
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    public async Task Erasing_a_word_selection_removes_the_word(Key key)
+    {
+        var (view, window) = await RealShell();
+
+        TypeText(view, "hello world");
+        await Task.Delay(700);
+
+        Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
+        await Task.Delay(300);
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+
+        Press(view, key);
+        await Task.Delay(900);
+
+        // Typing a marker afterwards, because the row helper trims: "hello " and "hello" are otherwise
+        // indistinguishable, and the difference is exactly whether the separating space survived.
+        TypeText(view, "X");
+        await Task.Delay(700);
+
+        Assert.That(CursorRow(view), Does.EndWith("hello X"),
+            "the word went and the space before it stayed");
+
+        view.Kill();
+        window.Close();
+    }
+
+    /// <summary>With nothing selected, Backspace still deletes exactly one character.</summary>
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    public async Task Backspace_without_a_selection_is_unchanged()
+    {
+        var (view, window) = await RealShell();
+
+        TypeText(view, "hello world");
+        await Task.Delay(700);
+
+        Press(view, Key.Back);
+        await Task.Delay(900);
+
+        Assert.That(CursorRow(view), Does.EndWith("hello worl"), "one character, as before");
+
+        view.Kill();
+        window.Close();
+    }
 }

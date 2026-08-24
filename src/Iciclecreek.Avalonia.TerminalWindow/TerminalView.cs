@@ -1618,14 +1618,17 @@ namespace Iciclecreek.Terminal
                 // before Cmd+C / Ctrl+Shift+C could copy it.
                 if (!IsModifierKey(e.Key))
                 {
-                    // A keystroke that will TYPE replaces the selection; anything else just drops it.
-                    bool willType = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0
-                                    && TryGetPrintableChar(e, out _);
+                    // A keystroke that TYPES replaces the selection; Backspace and Delete remove it — both
+                    // of them, as in any text field, where either key means "get rid of what is selected"
+                    // rather than "act on one character". Anything else just drops the selection.
+                    bool unmodified = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) == 0;
+                    bool willType = unmodified && TryGetPrintableChar(e, out _);
+                    bool willErase = unmodified && e.Key is Key.Back or Key.Delete;
 
-                    if (willType)
+                    if (willType || willErase)
                         NoteInputStart();
 
-                    _pendingReplaceKeys = willType ? TakeKeyboardSelectionDeletion() : string.Empty;
+                    _pendingReplaceKeys = willType || willErase ? TakeKeyboardSelectionDeletion() : string.Empty;
                     if (_pendingReplaceKeys.Length == 0)
                     {
                         // The anchor is released whether or not a selection is currently drawn. A gesture can
@@ -1716,6 +1719,17 @@ namespace Iciclecreek.Terminal
                 // Special keys (arrows, function keys, Tab, etc.) - always handle in KeyDown
                 if (xtermKey != null)
                 {
+                    // Backspace or Delete over a selection removes the SELECTION, not one more character
+                    // beyond it — so the keystroke's own sequence is replaced rather than added to.
+                    var erase = _pendingReplaceKeys;
+                    _pendingReplaceKeys = string.Empty;
+                    if (erase.Length > 0 && e.Key is Key.Back or Key.Delete)
+                    {
+                        e.Handled = true;
+                        await SendToPtyAsync(erase).ConfigureAwait(false);
+                        return;
+                    }
+
                     var sequence = _terminal.GenerateKeyInput(xtermKey.Value, modifiers);
                     if (!string.IsNullOrEmpty(sequence))
                     {
