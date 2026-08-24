@@ -125,4 +125,214 @@ public class ShiftSelectionTests
         Assert.That(view.Terminal.Selection.HasSelection, Is.False, "typing clears it");
         window.Close();
     }
+
+    // ── Word-wise extension (#63) ───────────────────────────────────────────────────────────────
+
+    /// <summary>Put known text in the buffer and leave the cursor at the end of it.</summary>
+    private static void Type(TerminalView view, string text)
+    {
+        view.Terminal.Write(text);
+    }
+
+    /// <summary>
+    /// Ctrl+Shift+Left extends the selection by a WORD, the way it does in every text field. Reported as
+    /// #63: it moved to the word boundary but dropped the selection, because Control|Shift matched neither
+    /// the Shift-selection gate nor the word-motion gate and fell through to the blanket selection-clear.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task Ctrl_shift_left_extends_the_selection_by_a_word()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
+        await Task.Delay(60);
+
+        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "the selection must survive");
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"),
+            "one word back from the cursor");
+        Assert.That(pty.Written, Is.Empty, "and nothing reaches the shell");
+
+        window.Close();
+    }
+
+    /// <summary>A second press keeps growing it, rather than re-anchoring.</summary>
+    [AvaloniaTest]
+    public async Task Repeated_ctrl_shift_left_keeps_growing_the_selection()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
+        await Task.Delay(40);
+        Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
+        await Task.Delay(40);
+
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"));
+        window.Close();
+    }
+
+    /// <summary>And back the other way, collapsing as it returns to the anchor.</summary>
+    [AvaloniaTest]
+    public async Task Ctrl_shift_right_extends_back_toward_the_anchor()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
+        await Task.Delay(40);
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+
+        Press(view, Key.Right, KeyModifiers.Control | KeyModifiers.Shift);
+        await Task.Delay(40);
+
+        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "back at the anchor clears it");
+        window.Close();
+    }
+
+    /// <summary>Alt+Shift is the same gesture on macOS; it must behave identically.</summary>
+    [AvaloniaTest]
+    public async Task Alt_shift_left_extends_by_a_word_too()
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
+        await Task.Delay(60);
+
+        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"));
+        Assert.That(pty.Written, Is.Empty);
+        window.Close();
+    }
+        private const string Esc = "\u001b";
+
+    /// <summary>
+    /// Option+Shift is the macOS word-selection gesture, and on that platform it is the ONLY one — Ctrl+arrow
+    /// belongs to Mission Control, so Ctrl+Shift+arrow never reaches the app. Both are accepted so the same
+    /// binding works everywhere.
+    /// </summary>
+    [TestCase(Key.Left, "world")]
+    [TestCase(Key.Right, "")]
+    [AvaloniaTest]
+    public async Task Option_shift_is_the_mac_gesture(Key key, string expected)
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, key, KeyModifiers.Alt | KeyModifiers.Shift);
+        await Task.Delay(60);
+
+        Assert.That(view.Terminal.Selection.GetSelectionText() ?? "", Is.EqualTo(expected));
+        Assert.That(pty.Written, Is.Empty, "a selection gesture is not shell input");
+        window.Close();
+    }
+
+    /// <summary>
+    /// Bare Option+arrow keeps meaning word-motion IN the shell, unchanged from #49. Pinned here because the
+    /// selection gesture claims Option+SHIFT, one modifier away — it must not swallow this one.
+    /// </summary>
+    [TestCase(Key.Left, "b")]
+    [TestCase(Key.Right, "f")]
+    [AvaloniaTest]
+    public async Task Bare_option_arrow_still_moves_the_shell_cursor(Key key, string letter)
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, key, KeyModifiers.Alt);
+        await Task.Delay(60);
+
+        Assert.That(pty.Written, Is.EqualTo(Esc + letter), "still ESC-b / ESC-f to the shell");
+        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "and no selection is made");
+        window.Close();
+    }
+
+    /// <summary>Same for bare Ctrl+arrow, which is the gesture on Windows and Linux.</summary>
+    [TestCase(Key.Left, "b")]
+    [TestCase(Key.Right, "f")]
+    [AvaloniaTest]
+    public async Task Bare_ctrl_arrow_still_moves_the_shell_cursor(Key key, string letter)
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, key, KeyModifiers.Control);
+        await Task.Delay(60);
+
+        Assert.That(pty.Written, Is.EqualTo(Esc + letter));
+        Assert.That(view.Terminal.Selection.HasSelection, Is.False);
+        window.Close();
+    }
+
+    // ── Line-edge gestures (#63 follow-up) ──────────────────────────────────────────────────────
+
+    private static bool OnMac => System.Runtime.InteropServices.RuntimeInformation
+        .IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX);
+
+    /// <summary>Shift+Home / Shift+End select to the line edge — the Windows and Linux gesture.</summary>
+    [TestCase(Key.Home, "hello world")]
+    [TestCase(Key.End, "")]
+    [AvaloniaTest]
+    public async Task Shift_home_and_end_select_to_the_line_edge(Key key, string expected)
+    {
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, key, KeyModifiers.Shift);
+        await Task.Delay(60);
+
+        Assert.That(view.Terminal.Selection.GetSelectionText() ?? "", Is.EqualTo(expected));
+        Assert.That(pty.Written, Is.Empty, "a selection gesture is not shell input");
+        window.Close();
+    }
+
+    /// <summary>
+    /// A Mac keyboard has no Home/End, so Cmd+arrow is the platform's line-start/line-end — and until now it
+    /// did nothing at all, swallowed by the Meta passthrough. It sends exactly what Home and End send.
+    /// </summary>
+    [TestCase(Key.Left, "[H")]
+    [TestCase(Key.Right, "[F")]
+    [AvaloniaTest]
+    public async Task Cmd_arrow_is_the_mac_line_edge(Key key, string tail)
+    {
+        if (!OnMac) Assert.Ignore("Cmd+arrow is a macOS gesture");
+
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, key, KeyModifiers.Meta);
+        await Task.Delay(60);
+
+        Assert.That(pty.Written, Is.EqualTo(Esc + tail), "the same sequence Home and End send");
+        window.Close();
+    }
+
+    /// <summary>And with Shift held it selects to that edge, like Shift+Home / Shift+End.</summary>
+    [TestCase(Key.Left, "hello world")]
+    [TestCase(Key.Right, "")]
+    [AvaloniaTest]
+    public async Task Cmd_shift_arrow_selects_to_the_mac_line_edge(Key key, string expected)
+    {
+        if (!OnMac) Assert.Ignore("Cmd+Shift+arrow is a macOS gesture");
+
+        var (view, pty, window) = LiveView();
+        Type(view, "hello world");
+        await Task.Delay(60);
+
+        Press(view, key, KeyModifiers.Meta | KeyModifiers.Shift);
+        await Task.Delay(60);
+
+        Assert.That(view.Terminal.Selection.GetSelectionText() ?? "", Is.EqualTo(expected));
+        Assert.That(pty.Written, Is.Empty, "a selection gesture is not shell input");
+        window.Close();
+    }
 }

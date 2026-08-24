@@ -1598,6 +1598,17 @@ namespace Iciclecreek.Terminal
                 // claims Cmd+C and Cmd+V; anything else fell straight through to the character path below
                 // and was typed into the process, so a host binding Cmd+K quietly sent the shell a "k".
                 // Left unhandled so it bubbles to the app's key bindings.
+                // Same reason as the selection alias above: a Mac keyboard has no Home/End, so Cmd+arrow
+                // is how a Mac user asks for line-start and line-end. Sends exactly what Home and End
+                // send, so it is an alias rather than a second code path — and it has to come BEFORE the
+                // Meta passthrough below, which would otherwise swallow it.
+                if (IsMacOS && e.KeyModifiers == KeyModifiers.Meta && e.Key is Key.Left or Key.Right)
+                {
+                    e.Handled = true;
+                    await SendToPtyAsync(e.Key == Key.Left ? "\u001b[H" : "\u001b[F").ConfigureAwait(false);
+                    return;
+                }
+
                 if ((e.KeyModifiers & KeyModifiers.Meta) != 0)
                     return;
 
@@ -1701,9 +1712,94 @@ namespace Iciclecreek.Terminal
         /// Left alone in the alternate buffer: full-screen apps (vim, less, a TUI agent) draw their own
         /// selection and several bind Shift+arrow, so there the sequence still belongs to the app.
         /// </remarks>
+        /// <summary>
+        /// The next word boundary from <paramref name="from"/> in <paramref name="direction"/>, as a caret
+        /// boundary ordinal.
+        /// </summary>
+        /// <remarks>
+        /// Readline's rule, which is what a shell user already has in their fingers: skip any run of
+        /// separators, then skip the run of word characters beyond it. Moving left looks at the cell BEFORE
+        /// the caret and moving right at the cell after, because a caret sits between cells — the same
+        /// asymmetry that makes one Shift+Right cover exactly one cell.
+        ///
+        /// Always advances by at least one cell when there is room, so holding the chord cannot stall on a
+        /// boundary it is already sitting on.
+        /// </remarks>
+        /// <summary>
+        /// The caret boundary just past the last non-blank cell on <paramref name="from"/>'s row.
+        /// </summary>
+        /// <remarks>
+        /// End means "end of what is written", not "end of the grid". A terminal row is padded out to the
+        /// full width with blanks, so jumping to the row edge selects a screenful of spaces after the
+        /// prompt — the same surprise as walking a word chord into empty space.
+        /// </remarks>
+        private int LineEndBoundary(int from, int cols)
+        {
+            int row = from / cols;
+            var line = _terminal.Buffer.GetLine(_terminal.Buffer.ViewportY + row);
+            if (line == null)
+                return from;
+
+            int lastContent = -1;
+            for (int x = 0; x < Math.Min(line.Length, cols); x++)
+                if (!string.IsNullOrWhiteSpace(line[x].Content))
+                    lastContent = x;
+
+            // Nothing on the row, or the caret is already past the content: stay put.
+            int edge = row * cols + lastContent + 1;
+            return edge > from ? edge : from;
+        }
+
+        private int WordBoundary(int from, int direction, int cols, int lastBoundary)
+        {
+            static bool IsSeparator(string? c) => string.IsNullOrWhiteSpace(c) || c.Length == 0;
+
+            string? CellAt(int boundary)
+            {
+                int row = boundary / cols;
+                int col = boundary % cols;
+                var line = _terminal.Buffer.GetLine(_terminal.Buffer.ViewportY + row);
+                if (line == null || col < 0 || col >= line.Length) return null;
+                return line[col].Content;
+            }
+
+            int i = Math.Clamp(from, 0, lastBoundary);
+            bool foundWord = false;
+
+            if (direction < 0)
+            {
+                while (i > 0 && IsSeparator(CellAt(i - 1))) i--;
+                while (i > 0 && !IsSeparator(CellAt(i - 1))) { i--; foundWord = true; }
+            }
+            else
+            {
+                while (i < lastBoundary && IsSeparator(CellAt(i))) i++;
+                while (i < lastBoundary && !IsSeparator(CellAt(i))) { i++; foundWord = true; }
+            }
+
+            // Nothing but blanks that way, so there is no word to move to. Stay put rather than running to
+            // the edge of the grid: a terminal's buffer is mostly empty cells, so without this a chord at
+            // the prompt selects the whole rest of the screen — which is what it did the first time.
+            return foundWord ? i : from;
+        }
+
         private bool TryExtendKeyboardSelection(KeyEventArgs e)
         {
-            if (e.KeyModifiers != KeyModifiers.Shift)
+            // Shift alone moves by a cell; Ctrl+Shift and Alt+Shift move by a WORD, matching every text
+            // field. Alt is the same gesture on macOS, where Ctrl+arrow belongs to the window manager.
+            //
+            // Ctrl+Shift used to match neither this gate nor the word-motion one below, so it fell through
+            // to the blanket selection-clear and then sent the modified-cursor sequence to the shell — which
+            // moved the cursor by a word and dropped the selection on the way. Reported as #63.
+            bool byWord = e.KeyModifiers is (KeyModifiers.Control | KeyModifiers.Shift)
+                                         or (KeyModifiers.Alt | KeyModifiers.Shift);
+
+            // macOS keyboards have no Home/End, so Cmd+arrow is the platform's line-start/line-end and
+            // Cmd+Shift+arrow is its select-to-line-edge. Treated as an alias for Shift+Home / Shift+End
+            // rather than a second mechanism.
+            bool toLineEdge = IsMacOS && e.KeyModifiers == (KeyModifiers.Meta | KeyModifiers.Shift);
+
+            if (e.KeyModifiers != KeyModifiers.Shift && !byWord && !toLineEdge)
                 return false;
             if (_terminal.IsAlternateBufferActive)
                 return false;
@@ -1722,15 +1818,24 @@ namespace Iciclecreek.Terminal
                 _kbSelFocus = cursorOrd;
             }
 
-            int focus = _kbSelFocus;
-            switch (e.Key)
+            var key = e.Key;
+            if (toLineEdge)
             {
-                case Key.Left: focus -= 1; break;
-                case Key.Right: focus += 1; break;
+                // Only the horizontal pair aliases; Cmd+Shift+Up/Down is not a gesture this claims.
+                if (key == Key.Left) key = Key.Home;
+                else if (key == Key.Right) key = Key.End;
+                else return false;
+            }
+
+            int focus = _kbSelFocus;
+            switch (key)
+            {
+                case Key.Left: focus = byWord ? WordBoundary(focus, -1, cols, lastBoundary) : focus - 1; break;
+                case Key.Right: focus = byWord ? WordBoundary(focus, +1, cols, lastBoundary) : focus + 1; break;
                 case Key.Up: focus -= cols; break;
                 case Key.Down: focus += cols; break;
                 case Key.Home: focus -= focus % cols; break;
-                case Key.End: focus += cols - (focus % cols); break;
+                case Key.End: focus = LineEndBoundary(focus, cols); break;
                 default: return false;
             }
 
@@ -3954,6 +4059,19 @@ namespace Iciclecreek.Terminal
             // The cursor Y is relative to the active screen area, need to check if it's visible
             // when scrolled. Cursor is at absolute position: Buffer.YBase + Buffer.Y
             int absoluteCursorY = _terminal.Buffer.YBase + cursorY;
+
+            // While a keyboard selection is in flight, the caret follows its moving EDGE, the way it does in
+            // every text field — extending a selection and leaving the caret behind reads as a stuck cursor.
+            //
+            // Only where the caret is DRAWN changes. The shell still owns the real cursor and is never told
+            // about this, because it must not be: the buffer position is where the shell will write next,
+            // and moving it to follow a selection would put the next output in the wrong place.
+            if (_kbSelAnchor is not null)
+            {
+                int selCols = Math.Max(1, _terminal.Cols);
+                cursorX = _kbSelFocus % selCols;
+                absoluteCursorY = _terminal.Buffer.ViewportY + (_kbSelFocus / selCols);
+            }
 
             // Check if cursor is visible in current viewport
             if (absoluteCursorY < viewportY || absoluteCursorY >= viewportY + _terminal.Rows)
