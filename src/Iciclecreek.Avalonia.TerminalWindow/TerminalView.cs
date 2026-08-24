@@ -143,6 +143,10 @@ namespace Iciclecreek.Terminal
         private int _inputStartRow = -1;
         private int _inputStartCol;
         private int _lastOutputRow = -1;
+
+        // True once the shell has told us where its input begins, via OSC 133. A shell that reports it is
+        // authoritative, so the guesswork below is switched off for good rather than left to fight it.
+        private bool _semanticPrompt;
         // Armed only by shell OUTPUT moving to a new row. Starting armed would let the first interaction
         // record the input start wherever the cursor happens to be — which, if the user has already typed,
         // is the end of their input rather than the start of it, pinning the selection to a stop.
@@ -156,7 +160,7 @@ namespace Iciclecreek.Terminal
         /// </summary>
         private void NoteInputStart()
         {
-            if (!_inputStartPending || _terminal == null)
+            if (_semanticPrompt || !_inputStartPending || _terminal == null)
                 return;
 
             _inputStartRow = _terminal.Buffer.YBase + _terminal.Buffer.Y;
@@ -398,6 +402,33 @@ namespace Iciclecreek.Terminal
         /// parked up in the scrollback is moved down by the same amount, so the content the user is reading
         /// stays under their eye instead of sliding upward as output arrives.
         /// </summary>
+        /// <summary>
+        /// OSC 133 — shell integration. Only the marker for "the prompt ends here" is acted on.
+        /// </summary>
+        /// <remarks>
+        /// <para><c>B</c> is emitted by the shell immediately after it has drawn the prompt, so the cursor
+        /// is standing exactly where the user's input will begin. That is the answer
+        /// <see cref="NoteInputStart"/> spends effort inferring, and it is exact. Measured: after
+        /// <c>OSC 133;B</c> following a 12-character prompt, the cursor is at column 12.</para>
+        /// <para><c>I</c> is accepted alongside it, which some shells emit for the same point.</para>
+        /// <para>Once a shell has reported this, the heuristic is disabled rather than left to compete: a
+        /// shell that speaks OSC 133 knows better than any inference drawn from cursor movement.</para>
+        /// <para>Runs on the read task, inside the terminal lock, so it does nothing but record.</para>
+        /// </remarks>
+        private void OnTerminalOscReceived(object? sender, XT.Events.TerminalEvents.OscReceivedEventArgs e)
+        {
+            if (e.Code != 133 || string.IsNullOrEmpty(e.Data))
+                return;
+
+            if (e.Data[0] is 'B' or 'I')
+            {
+                _inputStartRow = _terminal.Buffer.YBase + _terminal.Buffer.Y;
+                _inputStartCol = _terminal.Buffer.X;
+                _inputStartPending = false;
+                _semanticPrompt = true;
+            }
+        }
+
         private void OnBufferTrimmed(int count)
         {
             if (_followBottom || count <= 0)
@@ -863,6 +894,11 @@ namespace Iciclecreek.Terminal
             // alive through the subscription and goes on calling back into a control that is off the tree.
             _scrollbackBuffer = _terminal.Buffer;
             _scrollbackBuffer.Trimmed += OnBufferTrimmed;
+
+            // Shell integration. A shell that emits OSC 133 says exactly where its prompt ends, which is the
+            // one thing the input-start heuristic can only infer. Subscribed here for the same reason as
+            // Trimmed above: this point runs exactly once, and the emulator outlives a detach/re-attach.
+            _terminal.OscReceived += OnTerminalOscReceived;
 
             _terminal.DataReceived += OnTerminalDataReceived;
             _terminal.BufferChanged += OnTerminalBufferChanged;
@@ -3499,7 +3535,7 @@ namespace Iciclecreek.Terminal
                         if (cursorRow != _lastOutputRow)
                         {
                             _lastOutputRow = cursorRow;
-                            _inputStartPending = true;
+                            _inputStartPending = !_semanticPrompt;
                         }
                     }
 
