@@ -1,6 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -14,7 +12,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// owner, in order, instead of lost. Only a chunk stolen after the new owner attached is dropped,
 /// because late delivery could reorder, and reordered output corrupts where a gap merely gaps.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class HandoverTests
 {
     private static (TerminalView view, Window window) Realised()
@@ -45,7 +43,7 @@ public class HandoverTests
         var deadline = DateTime.UtcNow.AddMilliseconds(ms);
         while (DateTime.UtcNow < deadline && !condition())
             await Task.Delay(20);
-        Assert.That(condition(), Is.True, what);
+        condition().Should().BeTrue(what);
     }
 
     // ---- cancellable mode: the deterministic handover -------------------------------------
@@ -66,7 +64,7 @@ public class HandoverTests
             await Task.Delay(150);   // the loop parks its first read
 
             var detached = view1.DetachConnection();
-            Assert.That(detached, Is.SameAs(pty));
+            detached.Should().BeSameAs(pty);
 
             // Speak AFTER the detach. A stale reader would steal this; a cancelled one cannot.
             pty.Push("AFTER-HANDOVER");
@@ -74,8 +72,7 @@ public class HandoverTests
             view2.AttachConnection(pty);
             await WaitUntil(() => Text(view2).Contains("AFTER-HANDOVER"),
                 "the new owner must receive everything said after the handover");
-            Assert.That(Text(view1), Does.Not.Contain("AFTER-HANDOVER"),
-                "the old owner must not have painted the new owner's output");
+            Text(view1).Should().NotContain("AFTER-HANDOVER", "the old owner must not have painted the new owner's output");
         }
         finally { w1.Close(); w2.Close(); }
     }
@@ -95,10 +92,8 @@ public class HandoverTests
             view.DetachConnection();
             sw.Stop();
 
-            Assert.That(sw.ElapsedMilliseconds, Is.LessThan(2000),
-                "a parked cancellable read must unpark on the cancel, not on the next output");
-            Assert.That(pty.PendingChunks, Is.Zero,
-                "and nothing may have been pushed-and-consumed to achieve it");
+            sw.ElapsedMilliseconds.Should().BeLessThan(2000, "a parked cancellable read must unpark on the cancel, not on the next output");
+            pty.PendingChunks.Should().Be(0, "and nothing may have been pushed-and-consumed to achieve it");
         }
         finally { window.Close(); }
     }
@@ -131,8 +126,7 @@ public class HandoverTests
             view2.AttachConnection(pty);
             await WaitUntil(() => Text(view2).Contains("STOLEN-BUT-SAVED"),
                 "the parked chunk must be replayed to the new owner");
-            Assert.That(Text(view1), Does.Not.Contain("STOLEN-BUT-SAVED"),
-                "the stale view must not have painted a chunk it no longer owned");
+            Text(view1).Should().NotContain("STOLEN-BUT-SAVED", "the stale view must not have painted a chunk it no longer owned");
         }
         finally { w1.Close(); w2.Close(); }
     }

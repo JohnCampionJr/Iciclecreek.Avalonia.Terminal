@@ -1,9 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
-using NUnit.Framework;
 using XTerm.Buffer;
 
 namespace Iciclecreek.Terminal.Tests;
@@ -19,7 +17,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// cache is dropped only by the next write to that line. A sprite that has moved on leaves a row nothing
 /// writes to again, and the mixture stays on screen — the trail of leftover glyphs asciiquarium draws.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class LineCacheTearingTests
 {
     /// <summary>
@@ -46,7 +44,7 @@ public class LineCacheTearingTests
             var terminal = view.Terminal;
             var cols = terminal.Cols;
 
-            Assert.That(cols, Is.GreaterThan(8), "sanity: a degenerate grid would make every assertion vacuous");
+            cols.Should().BeGreaterThan(8, "sanity: a degenerate grid would make every assertion vacuous");
 
             // Home, then exactly one row wide, so the cursor is left pending-wrap and the row never
             // scrolls out from under the reader.
@@ -59,8 +57,8 @@ public class LineCacheTearingTests
             terminal.Write(allB);
             var stateB = Signature(Render(view, terminal));
 
-            Assert.That(stateA, Is.Not.Empty, "sanity: the row was not cached at all, so there is nothing to compare");
-            Assert.That(stateA, Is.Not.EqualTo(stateB), "sanity: the two states must be distinguishable");
+            stateA.Should().NotBeEmpty("sanity: the row was not cached at all, so there is nothing to compare");
+            stateA.Should().NotBe(stateB, "sanity: the two states must be distinguishable");
 
             using var stop = new CancellationTokenSource();
             var writer = Task.Factory.StartNew(
@@ -114,10 +112,8 @@ public class LineCacheTearingTests
             stop.Cancel();
             writer.Wait(TimeSpan.FromSeconds(5));
 
-            Assert.That(interleaved, Is.GreaterThan(0),
-                $"no write landed during any of {renders} renders, so nothing about tearing was tested");
-            Assert.That(torn, Is.Zero,
-                $"{torn} of {renders - uncached} cached rows matched neither state the writer left behind: "
+            interleaved.Should().BeGreaterThan(0, $"no write landed during any of {renders} renders, so nothing about tearing was tested");
+            torn.Should().Be(0, $"{torn} of {renders - uncached} cached rows matched neither state the writer left behind: "
                 + "the renderer stored a row that never existed");
         }
         finally
