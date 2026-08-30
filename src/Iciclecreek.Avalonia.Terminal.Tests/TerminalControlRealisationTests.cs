@@ -1,6 +1,4 @@
 using Avalonia.Media;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -17,7 +15,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// emulator from one fresh TerminalOptions in OnInitialized, and TerminalControl.OnApplyTemplate then
 /// assigns a SECOND fresh instance to view.Options. Only the first one reaches the terminal.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalControlRealisationTests
 {
     /// <summary>
@@ -34,9 +32,8 @@ public class TerminalControlRealisationTests
         {
             var view = control.View();
 
-            Assert.That(view, Is.Not.Null);
-            Assert.That(control.Terminal, Is.Not.Null,
-                "the emulator is built in TerminalView.OnInitialized, which the template runs via EndInit");
+            view.Should().NotBeNull();
+            control.Terminal.Should().NotBeNull("the emulator is built in TerminalView.OnInitialized, which the template runs via EndInit");
         }
         finally
         {
@@ -53,8 +50,7 @@ public class TerminalControlRealisationTests
 
         try
         {
-            Assert.That(control.View().Process, Is.EqualTo(""),
-                $"observed '{control.View().Process}'");
+            (control.View().Process).Should().Be("", $"observed '{control.View().Process}'");
         }
         finally
         {
@@ -71,7 +67,7 @@ public class TerminalControlRealisationTests
 
         try
         {
-            Assert.That(control.View().Args, Is.EqualTo(new[] { "-NoLogo", "-Interactive" }),
+            control.View().Args.Should().Equal(new[] { "-NoLogo", "-Interactive" },
                 $"observed [{string.Join(", ", control.View().Args ?? [])}]");
         }
         finally
@@ -90,8 +86,7 @@ public class TerminalControlRealisationTests
 
         try
         {
-            Assert.That(control.View().StartingDirectory, Is.EqualTo(expected),
-                $"observed '{control.View().StartingDirectory ?? "null"}'");
+            (control.View().StartingDirectory).Should().Be(expected, $"observed '{control.View().StartingDirectory ?? "null"}'");
         }
         finally
         {
@@ -108,8 +103,7 @@ public class TerminalControlRealisationTests
 
         try
         {
-            Assert.That(control.View().FontSize, Is.EqualTo(22),
-                $"observed {control.View().FontSize}");
+            (control.View().FontSize).Should().Be(22, $"observed {control.View().FontSize}");
         }
         finally
         {
@@ -127,8 +121,7 @@ public class TerminalControlRealisationTests
 
         try
         {
-            Assert.That(control.View().SelectionBrush, Is.SameAs(brush),
-                "the brush instance itself should reach the view, not a copy");
+            (control.View().SelectionBrush).Should().BeSameAs(brush, "the brush instance itself should reach the view, not a copy");
         }
         finally
         {
@@ -151,8 +144,7 @@ public class TerminalControlRealisationTests
 
         try
         {
-            Assert.That(control.Terminal.Options.Scrollback, Is.EqualTo(5000),
-                $"a documented scrollback size that never reaches the emulator is not a scrollback size. "
+            control.Terminal.Options.Scrollback.Should().Be(5000, $"a documented scrollback size that never reaches the emulator is not a scrollback size. "
                 + $"Observed {control.Terminal.Options.Scrollback}");
         }
         finally
@@ -170,8 +162,7 @@ public class TerminalControlRealisationTests
 
         try
         {
-            Assert.That(control.Terminal.Options.Scrollback, Is.EqualTo(1000),
-                $"observed {control.Terminal.Options.Scrollback}");
+            control.Terminal.Options.Scrollback.Should().Be(1000, $"observed {control.Terminal.Options.Scrollback}");
         }
         finally
         {
@@ -194,8 +185,7 @@ public class TerminalControlRealisationTests
 
         try
         {
-            Assert.That(control.Terminal.Options.WindowOptions.MaximizeWin, Is.True,
-                "the caller's Options object must be what the emulator runs on; a fresh default silently "
+            control.Terminal.Options.WindowOptions.MaximizeWin.Should().BeTrue("the caller's Options object must be what the emulator runs on; a fresh default silently "
                 + "discards every flag they set");
         }
         finally

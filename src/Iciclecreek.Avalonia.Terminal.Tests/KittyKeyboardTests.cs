@@ -1,9 +1,7 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using System.Threading;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -17,7 +15,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// that moment. Every keystroke went through the legacy generators regardless, which fails in
 /// exactly the applications that ask for the protocol.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class KittyKeyboardTests
 {
     // Built rather than written as a literal: an ESC byte does not survive every tool that touches
@@ -172,9 +170,8 @@ public class KittyKeyboardTests
             Press(view, Key.Up, p: PhysicalKey.ArrowUp);
 
             var sent = AwaitSince(pty, mark);
-            Assert.That(sent, Does.StartWith($"{Esc}["), $"observed {Escape(sent)}");
-            Assert.That(sent, Does.EndWith("u").Or.EndWith("A"),
-                $"a CSI-u form, or the CSI-A the protocol keeps for an unmodified arrow: {Escape(sent)}");
+            sent.Should().StartWith($"{Esc}[", $"observed {Escape(sent)}");
+            (sent.EndsWith("u") || sent.EndsWith("A")).Should().BeTrue($"a CSI-u form, or the CSI-A the protocol keeps for an unmodified arrow: {Escape(sent)}");
         }
         finally { window.Close(); }
     }
@@ -190,7 +187,7 @@ public class KittyKeyboardTests
 
             Press(view, Key.Up, p: PhysicalKey.ArrowUp);
 
-            Assert.That(AwaitSince(pty, mark), Is.EqualTo($"{Esc}[A"));
+            AwaitSince(pty, mark).Should().Be($"{Esc}[A");
         }
         finally { window.Close(); }
     }
@@ -210,7 +207,7 @@ public class KittyKeyboardTests
 
             Release(view, Key.A, p: PhysicalKey.A, symbol: "a");
 
-            Assert.That(AwaitSince(pty, mark), Is.Not.Empty, "a release the flags asked for must be reported");
+            AwaitSince(pty, mark).Should().NotBeEmpty("a release the flags asked for must be reported");
         }
         finally { window.Close(); }
     }
@@ -243,8 +240,7 @@ public class KittyKeyboardTests
 
             Release(view, Key.Up, p: PhysicalKey.ArrowUp);
 
-            Assert.That(Since(pty, mark), Is.Empty,
-                "the release was not asked for, so it sends nothing at all");
+            Since(pty, mark).Should().BeEmpty("the release was not asked for, so it sends nothing at all");
         }
         finally { window.Close(); }
     }
@@ -260,7 +256,7 @@ public class KittyKeyboardTests
 
             Press(view, Key.LeftShift, KeyModifiers.Shift, PhysicalKey.ShiftLeft);
 
-            Assert.That(Since(pty, mark), Is.Empty);
+            Since(pty, mark).Should().BeEmpty();
         }
         finally { window.Close(); }
     }
@@ -283,8 +279,7 @@ public class KittyKeyboardTests
             Press(view, Key.A, p: PhysicalKey.A, symbol: "a");
             var second = AwaitSince(pty, mark);
 
-            Assert.That(second, Is.Not.EqualTo(first),
-                $"a repeat must not encode identically to the press: {Escape(first)} vs {Escape(second)}");
+            second.Should().NotBe(first, $"a repeat must not encode identically to the press: {Escape(first)} vs {Escape(second)}");
         }
         finally { window.Close(); }
     }
@@ -313,8 +308,7 @@ public class KittyKeyboardTests
             var mark = Mark(pty);
             Press(view, Key.A, p: PhysicalKey.A, symbol: "a");
 
-            Assert.That(AwaitSince(pty, mark), Is.EqualTo(first),
-                "the key was let go, so this is a fresh press rather than a repeat");
+            AwaitSince(pty, mark).Should().Be(first, "the key was let go, so this is a fresh press rather than a repeat");
         }
         finally { window.Close(); }
     }

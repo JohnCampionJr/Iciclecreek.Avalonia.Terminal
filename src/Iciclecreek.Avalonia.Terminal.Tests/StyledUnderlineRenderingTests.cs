@@ -1,8 +1,6 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -21,7 +19,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// decorations here. A side-by-side against the Skia renderer is what caught it. These assert the
 /// run list, which is where the decision is observable.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class StyledUnderlineRenderingTests
 {
     private const string Esc = "\u001b";
@@ -57,19 +55,19 @@ public class StyledUnderlineRenderingTests
         }
 
         var line = view.Terminal.Buffer.Lines[view.Terminal.Buffer.ViewportY];
-        Assert.That(line, Is.Not.Null);
+        line.Should().NotBeNull();
 
         var runs = line!.Cache as List<TerminalView.CachedTextRun>;
-        Assert.That(runs, Is.Not.Null, "the row produced no cached runs");
+        runs.Should().NotBeNull("the row produced no cached runs");
         return runs!;
     }
 
     [AvaloniaTest]
-    [TestCase("4", XTerm.Common.UnderlineStyle.Single)]
-    [TestCase("4:2", XTerm.Common.UnderlineStyle.Double)]
-    [TestCase("4:3", XTerm.Common.UnderlineStyle.Curly)]
-    [TestCase("4:4", XTerm.Common.UnderlineStyle.Dotted)]
-    [TestCase("4:5", XTerm.Common.UnderlineStyle.Dashed)]
+    [DataRow("4", XTerm.Common.UnderlineStyle.Single)]
+    [DataRow("4:2", XTerm.Common.UnderlineStyle.Double)]
+    [DataRow("4:3", XTerm.Common.UnderlineStyle.Curly)]
+    [DataRow("4:4", XTerm.Common.UnderlineStyle.Dotted)]
+    [DataRow("4:5", XTerm.Common.UnderlineStyle.Dashed)]
     public void The_run_carries_the_style_it_will_draw(string sgr, XTerm.Common.UnderlineStyle expected)
     {
         var (view, window) = Realised();
@@ -78,8 +76,8 @@ public class StyledUnderlineRenderingTests
             view.Terminal.Write($"{Esc}[{sgr}mabc");
 
             var run = RunsForFirstRow(view).First(r => r.UnderlineStyle != XTerm.Common.UnderlineStyle.None);
-            Assert.That(run.UnderlineStyle, Is.EqualTo(expected));
-            Assert.That(run.UnderlineBrush, Is.Not.Null, "an underline needs something to draw with");
+            run.UnderlineStyle.Should().Be(expected);
+            run.UnderlineBrush.Should().NotBeNull("an underline needs something to draw with");
         }
         finally { window.Close(); }
     }
@@ -92,8 +90,7 @@ public class StyledUnderlineRenderingTests
         {
             view.Terminal.Write("plain");
 
-            Assert.That(RunsForFirstRow(view).All(r => r.UnderlineStyle == XTerm.Common.UnderlineStyle.None),
-                Is.True);
+            RunsForFirstRow(view).All(r => r.UnderlineStyle == XTerm.Common.UnderlineStyle.None).Should().BeTrue();
         }
         finally { window.Close(); }
     }
@@ -110,10 +107,10 @@ public class StyledUnderlineRenderingTests
             view.Terminal.Write($"{Esc}[4:3;58:2::255:0:0merror");
 
             var run = RunsForFirstRow(view).First(r => r.UnderlineStyle != XTerm.Common.UnderlineStyle.None);
-            Assert.That(run.UnderlineBrush, Is.InstanceOf<ImmutableSolidColorBrush>());
+            run.UnderlineBrush.Should().BeAssignableTo<ImmutableSolidColorBrush>();
 
             var brush = (ImmutableSolidColorBrush)run.UnderlineBrush!;
-            Assert.That(brush.Color, Is.EqualTo(Color.FromRgb(255, 0, 0)));
+            brush.Color.Should().Be(Color.FromRgb(255, 0, 0));
         }
         finally { window.Close(); }
     }
@@ -127,7 +124,7 @@ public class StyledUnderlineRenderingTests
             view.Terminal.Write($"{Esc}[4:3mplain");
 
             var run = RunsForFirstRow(view).First(r => r.UnderlineStyle != XTerm.Common.UnderlineStyle.None);
-            Assert.That(run.UnderlineBrush, Is.Not.Null);
+            run.UnderlineBrush.Should().NotBeNull();
         }
         finally { window.Close(); }
     }
@@ -144,11 +141,11 @@ public class StyledUnderlineRenderingTests
     /// the match cannot be an accident.</para>
     /// </remarks>
     [AvaloniaTest]
-    [TestCase("4")]
-    [TestCase("4:2")]
-    [TestCase("4:3")]
-    [TestCase("4:4")]
-    [TestCase("4:5")]
+    [DataRow("4")]
+    [DataRow("4:2")]
+    [DataRow("4:3")]
+    [DataRow("4:4")]
+    [DataRow("4:5")]
     public void Every_style_is_drawn_on_the_frame_the_line_is_built(string sgr)
     {
         var (view, window) = Realised();
@@ -163,8 +160,7 @@ public class StyledUnderlineRenderingTests
                 view.Render(context);
             }
 
-            Assert.That(DrawnIn(group, Color.FromRgb(255, 0, 255)), Is.True,
-                $"nothing was drawn in the underline's colour for {sgr}, so the underline was "
+            DrawnIn(group, Color.FromRgb(255, 0, 255)).Should().BeTrue($"nothing was drawn in the underline's colour for {sgr}, so the underline was "
                 + "decided on and then never painted");
         }
         finally { window.Close(); }
@@ -190,7 +186,7 @@ public class StyledUnderlineRenderingTests
             var strokes = AllGeometry(group)
                 .Count(d => d.Brush is ISolidColorBrush fill && fill.Color == magenta);
 
-            Assert.That(strokes, Is.EqualTo(2), "a Double underline is a pair, not a line");
+            strokes.Should().Be(2, "a Double underline is a pair, not a line");
         }
         finally { window.Close(); }
     }
@@ -202,9 +198,9 @@ public class StyledUnderlineRenderingTests
     /// a DECDWL line, which underlined before, silently drew nothing.
     /// </summary>
     [AvaloniaTest]
-    [TestCase("#6")]   // DECDWL — double width
-    [TestCase("#3")]   // DECDHL top half
-    [TestCase("#4")]   // DECDHL bottom half
+    [DataRow("#6")]   // DECDWL — double width
+    [DataRow("#3")]   // DECDHL top half
+    [DataRow("#4")]   // DECDHL bottom half
     public void A_double_width_line_keeps_its_underline(string lineAttr)
     {
         var (view, window) = Realised();
@@ -216,8 +212,7 @@ public class StyledUnderlineRenderingTests
             using (var context = group.Open())
                 view.Render(context);
 
-            Assert.That(DrawnIn(group, Color.FromRgb(255, 0, 255)), Is.True,
-                $"an underline on a {lineAttr} line drew nothing — the double-width renderer "
+            DrawnIn(group, Color.FromRgb(255, 0, 255)).Should().BeTrue($"an underline on a {lineAttr} line drew nothing — the double-width renderer "
                 + "lost the by-hand underline call");
         }
         finally { window.Close(); }
@@ -244,8 +239,7 @@ public class StyledUnderlineRenderingTests
             // anything nulled the cache between renders, the second render would BUILD again,
             // still find magenta, and still go green — while the replay wiring went untested.
             var line = view.Terminal.Buffer.Lines[view.Terminal.Buffer.ViewportY];
-            Assert.That(line!.Cache, Is.Not.Null,
-                "the first render did not cache, so this is not testing replay");
+            (line!.Cache).Should().NotBeNull("the first render did not cache, so this is not testing replay");
             var cachedRuns = line.Cache;
 
             // Second render replays it.
@@ -253,12 +247,10 @@ public class StyledUnderlineRenderingTests
             using (var context = second.Open())
                 view.Render(context);
 
-            Assert.That(ReferenceEquals(line.Cache, cachedRuns), Is.True,
-                "the second render rebuilt the line instead of replaying it — the build path "
+            ReferenceEquals(line.Cache, cachedRuns).Should().BeTrue("the second render rebuilt the line instead of replaying it — the build path "
                 + "cannot prove the replay path draws");
 
-            Assert.That(DrawnIn(second, Color.FromRgb(255, 0, 255)), Is.True,
-                "the replayed frame lost the underline");
+            DrawnIn(second, Color.FromRgb(255, 0, 255)).Should().BeTrue("the replayed frame lost the underline");
         }
         finally { window.Close(); }
     }

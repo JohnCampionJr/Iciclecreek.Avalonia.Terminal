@@ -1,16 +1,14 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Styling;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
 /// <summary>
 /// Where the default theme sits, and what runs before the emulator is ready.
 /// </summary>
-[TestFixture]
+[TestClass]
 public class StylesAndLifecycleTests
 {
     // ------------------------------------------------------ the default theme
@@ -36,8 +34,7 @@ public class StylesAndLifecycleTests
         var styles = Application.Current!.Styles;
 
         var ours = IndexOfTerminalTheme(styles);
-        Assert.That(ours, Is.GreaterThanOrEqualTo(0),
-            "sanity: the theme is loaded at all, which is what makes the position meaningful");
+        ours.Should().BeGreaterThanOrEqualTo(0, "sanity: the theme is loaded at all, which is what makes the position meaningful");
 
         // The fixture's own FluentTheme is added by TestAppBuilder.AfterSetup, which runs before any
         // control is constructed -- so it stands in for an application's styles here.
@@ -48,9 +45,8 @@ public class StylesAndLifecycleTests
                 fluent = i;
         }
 
-        Assert.That(fluent, Is.GreaterThanOrEqualTo(0), "sanity: the app has styles of its own");
-        Assert.That(ours, Is.LessThan(fluent),
-            "the library's default must come first, so anything the host adds outranks it");
+        fluent.Should().BeGreaterThanOrEqualTo(0, "sanity: the app has styles of its own");
+        ours.Should().BeLessThan(fluent, "the library's default must come first, so anything the host adds outranks it");
     }
 
     private static int IndexOfTerminalTheme(IList<IStyle> styles)
@@ -94,13 +90,12 @@ public class StylesAndLifecycleTests
         try
         {
             ResetStylesLoadedFlag();
-            Assert.That(removed, Is.Not.Empty, "sanity: there was a copy to take away");
-            Assert.That(IndexOfTerminalTheme(styles), Is.LessThan(0), "sanity: it is gone");
+            removed.Should().NotBeEmpty("sanity: there was a copy to take away");
+            IndexOfTerminalTheme(styles).Should().BeLessThan(0, "sanity: it is gone");
 
             _ = new TerminalControl { Process = "" };
 
-            Assert.That(IndexOfTerminalTheme(styles), Is.GreaterThanOrEqualTo(0),
-                "constructing a control must put the theme back, with no template needed to get there");
+            IndexOfTerminalTheme(styles).Should().BeGreaterThanOrEqualTo(0, "constructing a control must put the theme back, with no template needed to get there");
         }
         finally
         {
@@ -123,7 +118,7 @@ public class StylesAndLifecycleTests
     {
         var f = typeof(TerminalControl).GetField("_stylesLoaded",
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(f, Is.Not.Null, "_stylesLoaded has been renamed; this test needs updating");
+        f.Should().NotBeNull("_stylesLoaded has been renamed; this test needs updating");
         f!.SetValue(null, false);
     }
 
@@ -154,12 +149,12 @@ public class StylesAndLifecycleTests
 
             // Still usable afterwards, which it would not be if the reader had died mid-start.
             var second = new RecordingConnection();
-            Assert.DoesNotThrow(() => view.AttachConnection(second));
+            ((Action)(() => view.AttachConnection(second))).Should().NotThrow();
 
             view.SendInputAsync("still alive").GetAwaiter().GetResult();
             Thread.Sleep(150);
 
-            Assert.That(second.Written, Does.Contain("still alive"));
+            second.Written.Should().Contain("still alive");
         }
         finally { window.Close(); }
     }
@@ -193,7 +188,7 @@ public class StylesAndLifecycleTests
 
             writer.Start();
 
-            Assert.DoesNotThrow(() =>
+            ((Action)(() =>
             {
                 for (var i = 0; i < 40; i++)
                 {
@@ -201,13 +196,13 @@ public class StylesAndLifecycleTests
                     window.UpdateLayout();
                     Dispatcher.UIThread.RunJobs();
                 }
-            });
+            })).Should().NotThrow();
 
             Volatile.Write(ref stop, true);
             writer.Join(TimeSpan.FromSeconds(5));
 
-            Assert.That(view.Terminal.Cols, Is.GreaterThan(0));
-            Assert.That(view.Terminal.Buffer.Length, Is.GreaterThan(0));
+            view.Terminal.Cols.Should().BeGreaterThan(0);
+            view.Terminal.Buffer.Length.Should().BeGreaterThan(0);
         }
         finally { window.Close(); }
     }

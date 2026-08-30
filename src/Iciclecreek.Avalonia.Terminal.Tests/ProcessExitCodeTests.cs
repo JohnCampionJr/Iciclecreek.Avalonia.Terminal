@@ -1,7 +1,5 @@
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -15,7 +13,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// EOF fallback) racing behind one interlock, and which of them wins depends on scheduling — so a single pass
 /// proves nothing. The batch is what makes the assertion mean "always" rather than "this time".</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ProcessExitCodeTests
 {
     private static bool Posix => !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -89,24 +87,23 @@ public class ProcessExitCodeTests
     [AvaloniaTest]
     public async Task A_nonzero_exit_code_is_reported_faithfully()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var seen = await ReportedExitCodes(3);
 
-        Assert.That(seen.Any(c => c.HasValue), Is.True, "the exit path has to work at all." + Detail(seen));
-        Assert.That(seen.Where(c => c.HasValue), Is.All.EqualTo(3),
-            "a reported code that is not 3 is a host being told the wrong outcome." + Detail(seen));
+        seen.Any(c => c.HasValue).Should().BeTrue("the exit path has to work at all." + Detail(seen));
+        seen.Where(c => c.HasValue).Should().AllBeEquivalentTo(3, "a reported code that is not 3 is a host being told the wrong outcome." + Detail(seen));
     }
 
     /// <summary>The other half: waiting for the reap must not turn a genuine success into anything else.</summary>
     [AvaloniaTest]
     public async Task A_clean_exit_is_reported_as_zero()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var seen = await ReportedExitCodes(0);
 
-        Assert.That(seen.Any(c => c.HasValue), Is.True, "the exit path has to work at all." + Detail(seen));
-        Assert.That(seen.Where(c => c.HasValue), Is.All.EqualTo(0), Detail(seen));
+        seen.Any(c => c.HasValue).Should().BeTrue("the exit path has to work at all." + Detail(seen));
+        seen.Where(c => c.HasValue).Should().AllBeEquivalentTo(0, Detail(seen));
     }
 }

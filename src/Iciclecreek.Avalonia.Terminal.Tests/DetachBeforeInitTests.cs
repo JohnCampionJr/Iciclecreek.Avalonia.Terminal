@@ -1,7 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -12,7 +10,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// during initial attachment (OnInitialized hasn't fired yet)" — while the detach path unsubscribes from
 /// the same object with no guard. The asymmetry is the bug.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class DetachBeforeInitTests
 {
     /// <summary>
@@ -34,12 +32,11 @@ public class DetachBeforeInitTests
         var view = new TerminalView { Process = "" };
         view.AttachedToLogicalTree += (_, _) =>
         {
-            Assert.That(view.IsInitialized, Is.False, "sanity: attach is notified before OnInitialized runs");
+            view.IsInitialized.Should().BeFalse("sanity: attach is notified before OnInitialized runs");
             panel.Children.Remove(view);
         };
 
-        Assert.DoesNotThrow(() => panel.Children.Add(view),
-            "a view detached before OnInitialized has no emulator to unsubscribe from");
+        ((Action)(() => panel.Children.Add(view))).Should().NotThrow("a view detached before OnInitialized has no emulator to unsubscribe from");
 
         window.Close();
     }

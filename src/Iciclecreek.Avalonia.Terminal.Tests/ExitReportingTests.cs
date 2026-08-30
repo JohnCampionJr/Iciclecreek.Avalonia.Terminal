@@ -1,7 +1,5 @@
 using Porta.Pty;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -14,7 +12,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// about behaviour rather than about whether the scheduler happened to cooperate. The integration test
 /// alongside them needs 48 concurrent spawns before it can catch the same bug even once.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ExitReportingTests
 {
     // ── Harness ─────────────────────────────────────────────────────────────────────────────────
@@ -130,9 +128,9 @@ public class ExitReportingTests
         view.AttachConnection(connection);
 
         var done = await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(10)));
-        Assert.That(done, Is.SameAs(exited.Task), "EOF alone has to be enough to report an exit");
-        Assert.That(exited.Task.Result, Is.EqualTo(3), "reading ExitCode before the child is reaped reports 0 for a process that failed");
-        Assert.That(connection.WasWaitedOn, Is.True, "the reap is what makes the code readable");
+        done.Should().BeSameAs(exited.Task, "EOF alone has to be enough to report an exit");
+        exited.Task.Result.Should().Be(3, "reading ExitCode before the child is reaped reports 0 for a process that failed");
+        connection.WasWaitedOn.Should().BeTrue("the reap is what makes the code readable");
 
         window.Close();
     });
@@ -172,14 +170,14 @@ public class ExitReportingTests
         // EOF has been seen and the reap refused. Nothing may be reported off the back of that.
         await WaitUntil(() => connection.WasWaitedOn, "the EOF path tried to reap");
         await Task.Delay(200);
-        Assert.That(reported, Is.Empty, "0 would be invented, and 0 is the answer that reads as success");
+        reported.Should().BeEmpty("0 would be invented, and 0 is the answer that reads as success");
 
         // …and the interlock is still free, which is what leaves the authoritative event able to
         // speak. IsLive is exactly that flag (_ptyConnection != null && _processExitHandled == 0),
         // so it is the observable form of "nothing has claimed the exit yet" — asserted through the
         // public surface rather than by synthesising a PtyExitedEventArgs, whose constructor the
         // PTY library does not expose.
-        Assert.That(view.IsLive, Is.True, "a failed reap must not claim the exit and lock the real event out");
+        view.IsLive.Should().BeTrue("a failed reap must not claim the exit and lock the real event out");
 
         window.Close();
     });
@@ -217,10 +215,9 @@ public class ExitReportingTests
         await WaitUntil(() => reported.Count > 0,
             "the exit is reported even though the reap missed the read loop's grace period");
 
-        Assert.That(reported, Has.Count.EqualTo(1), "one exit, reported once");
-        Assert.That(reported[0].ExitCodeKnown, Is.True, "the child did reap, so the code is trustworthy");
-        Assert.That(reported[0].ExitCode, Is.EqualTo(3),
-            "a late reap still yields the REAL code — giving up was what lost it");
+        reported.Should().HaveCount(1, "one exit, reported once");
+        reported[0].ExitCodeKnown.Should().BeTrue("the child did reap, so the code is trustworthy");
+        reported[0].ExitCode.Should().Be(3, "a late reap still yields the REAL code — giving up was what lost it");
 
         window.Close();
     });
@@ -245,15 +242,14 @@ public class ExitReportingTests
 
         var attached = new ParkedUntilReleased(realExitCode: 0);
         view.AttachConnection(attached);
-        Assert.That(view.IsLive, Is.True, "the view was just handed a live connection");
+        view.IsLive.Should().BeTrue("the view was just handed a live connection");
 
         var returned = view.DetachConnection();
 
-        Assert.That(returned, Is.SameAs(attached), "the caller gets back exactly what it handed over");
-        Assert.That(attached.Disposed, Is.False,
-            "detaching must not dispose — disposing a pty ends the child, which is the opposite of detaching");
-        Assert.That(view.IsLive, Is.False, "the view is following nothing now");
-        Assert.That(view.DetachConnection(), Is.Null, "nothing left to detach");
+        returned.Should().BeSameAs(attached, "the caller gets back exactly what it handed over");
+        attached.Disposed.Should().BeFalse("detaching must not dispose — disposing a pty ends the child, which is the opposite of detaching");
+        view.IsLive.Should().BeFalse("the view is following nothing now");
+        view.DetachConnection().Should().BeNull("nothing left to detach");
 
         attached.Release();
         await Task.Yield();
@@ -280,20 +276,19 @@ public class ExitReportingTests
     /// satisfies the contract no matter what the view does, which is how the earlier revision of this branch
     /// passed its tests while disposing every attached connection.</para>
     /// </summary>
-    [Test]
+    [TestMethod]
     public void An_attached_connection_is_neither_killed_nor_disposed()
     {
         var view = new TerminalView();
         var attached = new ParkedUntilReleased(realExitCode: 0);
 
         view.AttachConnection(attached);
-        Assert.That(view.IsLive, Is.True, "the view was just handed a live connection");
+        view.IsLive.Should().BeTrue("the view was just handed a live connection");
 
         // Replacing it is the detach path a pane close or re-parent takes.
         view.AttachConnection(new ParkedUntilReleased(realExitCode: 0));
 
-        Assert.That(attached.Disposed, Is.False,
-            "the view disposed a connection it does not own; disposing ends the child, so a host would lose "
+        attached.Disposed.Should().BeFalse("the view disposed a connection it does not own; disposing ends the child, so a host would lose "
             + "the process behind a pane it merely closed");
 
         attached.Release();
@@ -386,9 +381,9 @@ public class ExitReportingTests
         first.Release();
         await Task.Delay(400);
 
-        Assert.That(reported, Is.Empty, "the stale loop's connection is not the live one, so it has no exit to report — and reporting one "
+        reported.Should().BeEmpty("the stale loop's connection is not the live one, so it has no exit to report — and reporting one "
             + "would both print the wrong process's code and mark the NEW connection as already exited");
-        Assert.That(view.IsLive, Is.True, "the terminal was just handed a live connection; a stale loop must not be able to kill it");
+        view.IsLive.Should().BeTrue("the terminal was just handed a live connection; a stale loop must not be able to kill it");
 
         second.Release();
         Pump(window);

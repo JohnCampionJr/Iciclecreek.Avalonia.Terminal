@@ -1,8 +1,6 @@
 using System.Text;
 using Porta.Pty;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -10,7 +8,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// The members a host needs when it owns a view's lifecycle rather than just showing one — pooling a view,
 /// laying its own chrome over it, or reading back what the shell last printed.
 /// </summary>
-[TestFixture]
+[TestClass]
 public class HostSurfaceTests
 {
     private sealed class ScriptedStream : Stream
@@ -98,11 +96,11 @@ public class HostSurfaceTests
         view.AttachConnection(new ScriptedOutput(string.Concat(Enumerable.Range(0, 200).Select(i => $"line {i}\r\n"))));
 
         await WaitUntil(() => view.MaxScrollback > 0, "output filled the scrollback");
-        Assert.That(BufferText(view), Does.Contain("line 5"), "sanity: there is something to clear");
+        BufferText(view).Should().Contain("line 5", "sanity: there is something to clear");
 
         view.ClearScreen();
 
-        Assert.That(BufferText(view).Trim(), Is.Empty, "screen and scrollback both");
+        BufferText(view).Trim().Should().BeEmpty("screen and scrollback both");
         window.Close();
     }
 
@@ -110,7 +108,7 @@ public class HostSurfaceTests
     [AvaloniaTest]
     public void ClearScreen_is_safe_before_the_view_is_realised()
     {
-        Assert.DoesNotThrow(() => new TerminalView { Process = "" }.ClearScreen());
+        ((Action)(() => new TerminalView { Process = "" }.ClearScreen())).Should().NotThrow();
     }
 
     /// <summary>
@@ -125,7 +123,7 @@ public class HostSurfaceTests
         view.AttachConnection(new ScriptedOutput("first line\r\nuser@host $ "));
 
         await WaitUntil(() => BufferText(view).Contains("user@host"), "the prompt was written");
-        Assert.That(view.CurrentLineText, Is.EqualTo("user@host $"), "trailing blanks are trimmed");
+        view.CurrentLineText.Should().Be("user@host $", "trailing blanks are trimmed");
         window.Close();
     }
 
@@ -139,11 +137,11 @@ public class HostSurfaceTests
         var view = new TerminalView { Process = "" };
         var window = Show(view);
 
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(view.CharWidth, Is.GreaterThan(0));
-            Assert.That(view.CharHeight, Is.GreaterThan(0));
-        });
+            view.CharWidth.Should().BeGreaterThan(0);
+            view.CharHeight.Should().BeGreaterThan(0);
+        };
         window.Close();
     }
 
@@ -152,18 +150,18 @@ public class HostSurfaceTests
     public void Cell_metrics_answer_before_the_first_layout_pass()
     {
         var view = new TerminalView { Process = "" };
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(view.CharWidth, Is.GreaterThan(0));
-            Assert.That(view.CharHeight, Is.GreaterThan(0));
-        });
+            view.CharWidth.Should().BeGreaterThan(0);
+            view.CharHeight.Should().BeGreaterThan(0);
+        };
     }
 
     /// <summary>Safe to call at any time, including on a view that was never realised.</summary>
     [AvaloniaTest]
     public void Refresh_is_safe_before_the_view_is_realised()
     {
-        Assert.DoesNotThrow(() => new TerminalView { Process = "" }.Refresh());
+        ((Action)(() => new TerminalView { Process = "" }.Refresh())).Should().NotThrow();
     }
 
     [AvaloniaTest]
@@ -171,7 +169,7 @@ public class HostSurfaceTests
     {
         var view = new TerminalView { Process = "" };
         var window = Show(view);
-        Assert.DoesNotThrow(() => view.Refresh());
+        ((Action)(() => view.Refresh())).Should().NotThrow();
         window.Close();
     }
 
@@ -184,16 +182,16 @@ public class HostSurfaceTests
     public void SuppressCursor_survives_being_set_before_the_template_runs()
     {
         var control = new TerminalControl { Process = "", SuppressCursor = true };
-        Assert.That(control.SuppressCursor, Is.True, "set before the template is applied");
+        control.SuppressCursor.Should().BeTrue("set before the template is applied");
 
         var window = Show(control);
-        Assert.That(control.SuppressCursor, Is.True, "and still true once it has");
+        control.SuppressCursor.Should().BeTrue("and still true once it has");
         window.Close();
     }
 
     [AvaloniaTest]
     public void SuppressCursor_defaults_to_off()
     {
-        Assert.That(new TerminalView().SuppressCursor, Is.False);
+        (new TerminalView().SuppressCursor).Should().BeFalse();
     }
 }

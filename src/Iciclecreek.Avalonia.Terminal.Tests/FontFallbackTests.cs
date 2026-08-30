@@ -1,6 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -14,34 +12,33 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>Asserted on the chain rather than on pixels: whether a glyph comes out in colour depends on the
 /// machine's installed fonts, which a test cannot rely on. What it CAN pin is that we asked.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class FontFallbackTests
 {
     private static readonly string[] EmojiFamilies =
         { "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji" };
 
-    [Test]
+    [TestMethod]
     public void The_default_chain_reaches_an_emoji_family()
     {
         var chain = TerminalView.DefaultFontFamily.ToString();
 
         foreach (var family in EmojiFamilies)
-            Assert.That(chain, Does.Contain(family), $"{family} is missing, so that platform has no emoji");
+            chain.Should().Contain(family, $"{family} is missing, so that platform has no emoji");
     }
 
     /// <summary>
     /// And they come last. The cell grid is measured from the first family that exists, and these are
     /// proportional — one in front would break the grid rather than fix the glyphs.
     /// </summary>
-    [Test]
+    [TestMethod]
     public void The_emoji_families_come_after_the_monospace_ones()
     {
         var chain = TerminalView.DefaultFontFamily.ToString();
 
         var firstEmoji = EmojiFamilies.Select(f => chain.IndexOf(f, StringComparison.Ordinal)).Min();
         foreach (var mono in new[] { "Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", "Courier New" })
-            Assert.That(chain.IndexOf(mono, StringComparison.Ordinal), Is.LessThan(firstEmoji),
-                $"{mono} must be tried before any emoji family, or the grid is measured from a proportional font");
+            chain.IndexOf(mono, StringComparison.Ordinal).Should().BeLessThan(firstEmoji, $"{mono} must be tried before any emoji family, or the grid is measured from a proportional font");
     }
 
     /// <summary>
@@ -55,7 +52,7 @@ public class FontFallbackTests
 
         var chain = window.Control().View().FontFamily.ToString();
         foreach (var family in EmojiFamilies)
-            Assert.That(chain, Does.Contain(family), "the window overrode the chain with one that has no emoji");
+            chain.Should().Contain(family, "the window overrode the chain with one that has no emoji");
 
         window.Close();
     }
@@ -69,7 +66,7 @@ public class FontFallbackTests
 
         var chain = control.View().FontFamily.ToString();
         foreach (var family in EmojiFamilies)
-            Assert.That(chain, Does.Contain(family));
+            chain.Should().Contain(family);
 
         window.Close();
     }

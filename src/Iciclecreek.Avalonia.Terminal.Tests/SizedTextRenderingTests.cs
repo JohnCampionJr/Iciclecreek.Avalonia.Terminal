@@ -1,7 +1,5 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -10,7 +8,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// scale transform, after every row's background, aligned per the sizing — asserted by recording
 /// the draw calls, the same technique the background tests use.
 /// </summary>
-[TestFixture]
+[TestClass]
 public class SizedTextRenderingTests
 {
     private const string Esc = "\u001b";
@@ -75,7 +73,7 @@ public class SizedTextRenderingTests
             view.Terminal.Write($"{Esc}]66;s=2;H{St}");
             var scaled = ScaledGlyphs(view).Where(g => g.ScaleX > 1.5).ToList();
 
-            Assert.That(scaled, Is.Not.Empty, "no glyph drew at 2x — the block did not render scaled");
+            scaled.Should().NotBeEmpty("no glyph drew at 2x — the block did not render scaled");
         }
         finally { window.Close(); }
     }
@@ -96,7 +94,7 @@ public class SizedTextRenderingTests
             view.Terminal.Write($"small: {Esc}]66;n=1:d=2;h{St}");
             var scaled = ScaledGlyphs(view).Where(g => g.ScaleX is > 0.4 and < 0.6).ToList();
 
-            Assert.That(scaled, Is.Not.Empty, "no glyph drew at 1/2x");
+            scaled.Should().NotBeEmpty("no glyph drew at 1/2x");
         }
         finally { window.Close(); }
     }
@@ -116,7 +114,7 @@ public class SizedTextRenderingTests
                 .Where(g => g.ScaleX > 0.9 && g.Glyphs.GlyphRun is { } run
                             && run.Characters.ToString()!.Contains("small"));
 
-            Assert.That(label, Is.Not.Empty, "the label in front of the block was lost");
+            label.Should().NotBeEmpty("the label in front of the block was lost");
         }
         finally { window.Close(); }
     }
@@ -141,10 +139,9 @@ public class SizedTextRenderingTests
             var lastFillAt = frame.FindLastIndex(d =>
                 d.Drawing is GeometryDrawing { Brush: ISolidColorBrush b } && b.Color.R > 100 && b.Color.G < 50);
 
-            Assert.That(glyphAt, Is.GreaterThan(-1), "scaled glyph missing");
-            Assert.That(lastFillAt, Is.GreaterThan(-1), "red fill missing");
-            Assert.That(glyphAt, Is.GreaterThan(lastFillAt),
-                "the block painted before the lower row's background, which will overpaint its bottom half");
+            glyphAt.Should().BeGreaterThan(-1, "scaled glyph missing");
+            lastFillAt.Should().BeGreaterThan(-1, "red fill missing");
+            glyphAt.Should().BeGreaterThan(lastFillAt, "the block painted before the lower row's background, which will overpaint its bottom half");
         }
         finally { window.Close(); }
     }
@@ -163,7 +160,7 @@ public class SizedTextRenderingTests
             view.Terminal.Write($"{Esc}]66;n=1:d=2:v=1;a{St}");
             var bottom = ScaledGlyphs(view).Where(g => g.ScaleX < 0.9).Select(g => g.OffsetY).First();
 
-            Assert.That(bottom, Is.GreaterThan(top));
+            bottom.Should().BeGreaterThan(top);
         }
         finally { window.Close(); }
     }
@@ -181,9 +178,8 @@ public class SizedTextRenderingTests
                 .Where(g => g.Glyphs.GlyphRun is { } run && run.Characters.ToString()!.Contains('Z'))
                 .ToList();
 
-            Assert.That(zDraws.Count(g => g.ScaleX > 1.5), Is.EqualTo(1), "the block glyph drew more or less than once");
-            Assert.That(zDraws.Count(g => g.ScaleX < 1.5), Is.EqualTo(0),
-                "the Z also drew at base scale — the normal pass did not skip the block");
+            zDraws.Count(g => g.ScaleX > 1.5).Should().Be(1, "the block glyph drew more or less than once");
+            zDraws.Count(g => g.ScaleX < 1.5).Should().Be(0, "the Z also drew at base scale — the normal pass did not skip the block");
         }
         finally { window.Close(); }
     }
@@ -207,9 +203,8 @@ public class SizedTextRenderingTests
             // screen.
             view.Terminal.Write($"{Esc}[{view.Terminal.Rows};1H\n");
 
-            Assert.That(view.Terminal.Buffer.ViewportY, Is.EqualTo(1), "the buffer did not scroll");
-            Assert.That(ScaledGlyphs(view).Count(g => g.ScaleX > 1.5), Is.EqualTo(1),
-                "the block vanished rather than being clipped to the top of the viewport");
+            view.Terminal.Buffer.ViewportY.Should().Be(1, "the buffer did not scroll");
+            ScaledGlyphs(view).Count(g => g.ScaleX > 1.5).Should().Be(1, "the block vanished rather than being clipped to the top of the viewport");
         }
         finally { window.Close(); }
     }
@@ -233,8 +228,7 @@ public class SizedTextRenderingTests
                             && b.Color.R > 100 && b.Color.G < 50)
                 .ToList();
 
-            Assert.That(reds.Count, Is.EqualTo(3),
-                "the space's own block went unfilled — the heading renders with a notch in it");
+            reds.Count.Should().Be(3, "the space's own block went unfilled — the heading renders with a notch in it");
         }
         finally { window.Close(); }
     }
@@ -247,9 +241,8 @@ public class SizedTextRenderingTests
         try
         {
             view.Terminal.Write($"{Esc}]66;s=2;H{St}");
-            Assert.That(ScaledGlyphs(view).Count(g => g.ScaleX > 1.5), Is.EqualTo(1));
-            Assert.That(ScaledGlyphs(view).Count(g => g.ScaleX > 1.5), Is.EqualTo(1),
-                "the replayed frame lost the block");
+            ScaledGlyphs(view).Count(g => g.ScaleX > 1.5).Should().Be(1);
+            ScaledGlyphs(view).Count(g => g.ScaleX > 1.5).Should().Be(1, "the replayed frame lost the block");
         }
         finally { window.Close(); }
     }

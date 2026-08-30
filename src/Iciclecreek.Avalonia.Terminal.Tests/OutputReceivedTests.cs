@@ -1,9 +1,7 @@
 using System.Text;
 using Porta.Pty;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -15,7 +13,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// by running a real shell, so "the event fires with exactly this text" is an assertion rather than a hope
 /// about how a shell happened to chunk its output.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class OutputReceivedTests
 {
     // ── Harness ─────────────────────────────────────────────────────────────────────────────────
@@ -104,7 +102,7 @@ public class OutputReceivedTests
         view.AttachConnection(new ScriptedOutput("first", "second"));
 
         await WaitUntil(() => seen.Count >= 2, "both chunks were delivered");
-        Assert.That(seen, Is.EqualTo(new[] { "first", "second" }), "chunks arrive whole, in order, decoded");
+        seen.Should().Equal(new[] { "first", "second" }, "chunks arrive whole, in order, decoded");
 
         window.Close();
     });
@@ -125,7 +123,7 @@ public class OutputReceivedTests
         view.AttachConnection(new ScriptedOutput("héllo ▸ 世界"));
 
         await WaitUntil(() => seen.Count >= 1, "the chunk was delivered");
-        Assert.That(seen[0], Is.EqualTo("héllo ▸ 世界"));
+        seen[0].Should().Be("héllo ▸ 世界");
 
         window.Close();
     });
@@ -146,7 +144,7 @@ public class OutputReceivedTests
         view.AttachConnection(new ScriptedOutput("anything"));
 
         await WaitUntil(() => onUiThread is not null, "the event was raised");
-        Assert.That(onUiThread, Is.True, "handlers are documented as safe to touch UI directly");
+        onUiThread.Should().BeTrue("handlers are documented as safe to touch UI directly");
 
         window.Close();
     });
@@ -175,7 +173,7 @@ public class OutputReceivedTests
         view.AttachConnection(new ScriptedOutput("one", "two"));
 
         await WaitUntil(() => delivered.Count >= 2, "delivery continued after the handler threw");
-        Assert.That(delivered, Is.EqualTo(new[] { "one", "two" }), "throwing must not stop the read loop or the event");
+        delivered.Should().Equal(new[] { "one", "two" }, "throwing must not stop the read loop or the event");
 
         window.Close();
     });
@@ -201,7 +199,7 @@ public class OutputReceivedTests
 
         await WaitUntil(() => first.Count >= 2, "the first handler saw both chunks");
         await Task.Delay(100);
-        Assert.That(second, Is.Empty, "documented limit: the throw aborts the rest of the invocation list");
+        second.Should().BeEmpty("documented limit: the throw aborts the rest of the invocation list");
 
         window.Close();
     });
@@ -222,7 +220,7 @@ public class OutputReceivedTests
         control.AttachConnection(new ScriptedOutput("through the control"));
 
         await WaitUntil(() => seen.Count >= 1, "the control re-raised it");
-        Assert.That(seen[0], Is.EqualTo("through the control"));
+        seen[0].Should().Be("through the control");
 
         window.Close();
     });
@@ -245,7 +243,7 @@ public class OutputReceivedTests
         view.AttachConnection(new ScriptedOutput("anything"));
 
         await WaitUntil(() => onUiThread is not null, "the event was raised");
-        Assert.That(onUiThread, Is.False, "opting in means the handler runs on the reader, not the dispatcher");
+        onUiThread.Should().BeFalse("opting in means the handler runs on the reader, not the dispatcher");
 
         window.Close();
     });
@@ -254,7 +252,7 @@ public class OutputReceivedTests
     [AvaloniaTest]
     public void The_opt_in_defaults_to_off()
     {
-        Assert.That(new TerminalView().OutputReceivedOnReadTask, Is.False);
+        (new TerminalView().OutputReceivedOnReadTask).Should().BeFalse();
     }
 
     /// <summary>
@@ -280,11 +278,11 @@ public class OutputReceivedTests
         view.AttachConnection(new ScriptedOutput("one", "two"));
 
         await WaitUntil(() => delivered.Count >= 2, "the loop kept reading past the throw");
-        Assert.That(delivered, Is.EqualTo(new[] { "one", "two" }));
+        delivered.Should().Equal(new[] { "one", "two" });
 
         // The loop reaching EOF and reporting the exit is what proves it was never torn down.
         var done = await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(10)));
-        Assert.That(done, Is.SameAs(exited.Task), "a throwing sniffer must not stop the reader reaching EOF");
+        done.Should().BeSameAs(exited.Task, "a throwing sniffer must not stop the reader reaching EOF");
 
         window.Close();
     });
@@ -303,7 +301,7 @@ public class OutputReceivedTests
     public Task TerminalControl_carries_the_opt_in_set_before_its_template_runs() => Run(async () =>
     {
         var control = new TerminalControl { Process = "", OutputReceivedOnReadTask = true };
-        Assert.That(control.OutputReceivedOnReadTask, Is.True, "set before the template is applied");
+        control.OutputReceivedOnReadTask.Should().BeTrue("set before the template is applied");
 
         var window = Show(control);
 
@@ -313,7 +311,7 @@ public class OutputReceivedTests
         control.AttachConnection(new ScriptedOutput("anything"));
 
         await WaitUntil(() => onUiThread is not null, "the event was raised");
-        Assert.That(onUiThread, Is.False, "the opt-in reached the inner view, not just the wrapper");
+        onUiThread.Should().BeFalse("the opt-in reached the inner view, not just the wrapper");
 
         window.Close();
     });

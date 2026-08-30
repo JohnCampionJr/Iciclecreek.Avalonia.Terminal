@@ -1,6 +1,4 @@
 using Avalonia.Media;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -11,7 +9,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// but a member that exists and returns nonsense passes that test perfectly. These assert the values go
 /// where they are supposed to, which is the half reflection cannot see.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ForwardedMemberTests
 {
     // ---- cursor appearance: real properties, so a value set before realisation must survive ----------
@@ -32,13 +30,13 @@ public class ForwardedMemberTests
         try
         {
             var view = control.View();
-            Assert.Multiple(() =>
-            {
-                Assert.That(view.CursorColor, Is.EqualTo(Colors.Magenta), $"observed {view.CursorColor}");
-                Assert.That(view.CursorStyle, Is.EqualTo(XTerm.Common.CursorStyle.Block), $"observed {view.CursorStyle}");
-                Assert.That(view.CursorBlink, Is.False, $"observed {view.CursorBlink}");
-                Assert.That(view.CursorBlinkRate, Is.EqualTo(250), $"observed {view.CursorBlinkRate}");
-            });
+            using (new AssertionScope())
+        {
+                view.CursorColor.Should().Be(Colors.Magenta, $"observed {view.CursorColor}");
+                view.CursorStyle.Should().Be(XTerm.Common.CursorStyle.Block, $"observed {view.CursorStyle}");
+                view.CursorBlink.Should().BeFalse($"observed {view.CursorBlink}");
+                view.CursorBlinkRate.Should().Be(250, $"observed {view.CursorBlinkRate}");
+            };
         }
         finally
         {
@@ -60,11 +58,11 @@ public class ForwardedMemberTests
         try
         {
             var view = window.Control().View();
-            Assert.Multiple(() =>
-            {
-                Assert.That(view.CursorColor, Is.EqualTo(Colors.Lime), $"observed {view.CursorColor}");
-                Assert.That(view.CursorStyle, Is.EqualTo(XTerm.Common.CursorStyle.Underline), $"observed {view.CursorStyle}");
-            });
+            using (new AssertionScope())
+        {
+                view.CursorColor.Should().Be(Colors.Lime, $"observed {view.CursorColor}");
+                view.CursorStyle.Should().Be(XTerm.Common.CursorStyle.Underline, $"observed {view.CursorStyle}");
+            };
         }
         finally
         {
@@ -84,8 +82,7 @@ public class ForwardedMemberTests
 
         try
         {
-            Assert.That(control.View().TextDecorations, Is.EqualTo(TextDecorationLocation.Underline),
-                $"observed {control.View().TextDecorations?.ToString() ?? "null"}");
+            (control.View().TextDecorations).Should().Be(TextDecorationLocation.Underline, $"observed {control.View().TextDecorations?.ToString() ?? "null"}");
         }
         finally
         {
@@ -104,14 +101,15 @@ public class ForwardedMemberTests
         try
         {
             var view = control.View();
-            Assert.Multiple(() =>
-            {
-                Assert.That(control.ViewportLines, Is.EqualTo(view.ViewportLines).And.GreaterThan(0),
+            using (new AssertionScope())
+        {
+                control.ViewportLines.Should().Be(view.ViewportLines,
                     $"control={control.ViewportLines} view={view.ViewportLines}");
-                Assert.That(control.MaxScrollback, Is.EqualTo(view.MaxScrollback));
-                Assert.That(control.ViewportY, Is.EqualTo(view.ViewportY));
-                Assert.That(control.IsAlternateBuffer, Is.EqualTo(view.IsAlternateBuffer));
-            });
+                control.ViewportLines.Should().BeGreaterThan(0);
+                control.MaxScrollback.Should().Be(view.MaxScrollback);
+                control.ViewportY.Should().Be(view.ViewportY);
+                control.IsAlternateBuffer.Should().Be(view.IsAlternateBuffer);
+            };
         }
         finally
         {
@@ -132,12 +130,11 @@ public class ForwardedMemberTests
             for (var i = 0; i < 200; i++)
                 control.Terminal.Write($"line {i}\r\n");
 
-            Assume.That(control.MaxScrollback, Is.GreaterThan(0), "needs a scrollback to test against");
+            control.MaxScrollback.Should().BeGreaterThan(0, "needs a scrollback to test against");
 
             control.ViewportY = 5;
 
-            Assert.That(control.View().ViewportY, Is.EqualTo(5),
-                $"observed {control.View().ViewportY}");
+            (control.View().ViewportY).Should().Be(5, $"observed {control.View().ViewportY}");
         }
         finally
         {
@@ -156,18 +153,18 @@ public class ForwardedMemberTests
     {
         var control = new TerminalControl { Process = "" };
 
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(control.ViewportY, Is.EqualTo(0));
-            Assert.That(control.MaxScrollback, Is.EqualTo(0));
-            Assert.That(control.ViewportLines, Is.EqualTo(0));
-            Assert.That(control.IsAlternateBuffer, Is.False);
-            Assert.That(control.IsLive, Is.False);
-            Assert.DoesNotThrow(() => control.ViewportY = 3);
-            Assert.DoesNotThrow(() => control.DetachConnection());
-            Assert.DoesNotThrowAsync(async () => await control.PasteAsync());
-            Assert.DoesNotThrowAsync(async () => await control.CopyAsync());
-        });
+            control.ViewportY.Should().Be(0);
+            control.MaxScrollback.Should().Be(0);
+            control.ViewportLines.Should().Be(0);
+            control.IsAlternateBuffer.Should().BeFalse();
+            control.IsLive.Should().BeFalse();
+            ((Action)(() => control.ViewportY = 3)).Should().NotThrow();
+            ((Action)(() => control.DetachConnection())).Should().NotThrow();
+            ((Func<Task>)(async () => await control.PasteAsync())).Should().NotThrowAsync().GetAwaiter().GetResult();
+            ((Func<Task>)(async () => await control.CopyAsync())).Should().NotThrowAsync().GetAwaiter().GetResult();
+        };
     }
 
     /// <summary>The same from an unshown window, which is two forwarders deep.</summary>
@@ -176,13 +173,13 @@ public class ForwardedMemberTests
     {
         var window = new TerminalWindow { Process = "" };
 
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(window.ViewportLines, Is.EqualTo(0));
-            Assert.That(window.IsLive, Is.False);
-            Assert.DoesNotThrow(() => window.DetachConnection());
-            Assert.DoesNotThrowAsync(async () => await window.CopyAsync());
-        });
+            window.ViewportLines.Should().Be(0);
+            window.IsLive.Should().BeFalse();
+            ((Action)(() => window.DetachConnection())).Should().NotThrow();
+            ((Func<Task>)(async () => await window.CopyAsync())).Should().NotThrowAsync().GetAwaiter().GetResult();
+        };
     }
 
     /// <summary>
@@ -197,7 +194,7 @@ public class ForwardedMemberTests
 
         try
         {
-            Assert.That(await control.CopyAsync(), Is.False, "nothing was selected");
+            (await control.CopyAsync()).Should().BeFalse("nothing was selected");
         }
         finally
         {
@@ -214,7 +211,7 @@ public class ForwardedMemberTests
     {
         var control = new TerminalControl { Process = "" };
 
-        Assert.Throws<InvalidOperationException>(() => control.AttachConnection(null!),
+        Assert.ThrowsExactly<InvalidOperationException>(() => control.AttachConnection(null!),
             "an unrealised control has no terminal to attach to, and should say so rather than no-op");
     }
 }

@@ -1,8 +1,6 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -16,7 +14,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// The care needed is in where the call goes: detaching from the logical tree is how this control
 /// gets re-parented, so tearing down there would kill a terminal being moved between panels.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class DisposalTests
 {
     // Built rather than written as a literal: an ESC byte in a source file does not survive every
@@ -57,12 +55,11 @@ public class DisposalTests
         try
         {
             var terminal = view.Terminal;
-            Assert.That(StillLive(terminal), Is.True, "the terminal should answer before disposal");
+            StillLive(terminal).Should().BeTrue("the terminal should answer before disposal");
 
             view.Dispose();
 
-            Assert.That(StillLive(terminal), Is.False,
-                "a disposed terminal ignores writes, which is how its parser subscriptions being "
+            StillLive(terminal).Should().BeFalse("a disposed terminal ignores writes, which is how its parser subscriptions being "
                 + "released shows from the outside");
         }
         finally { window.Close(); }
@@ -85,12 +82,12 @@ public class DisposalTests
             // Both handlers would throw or touch disposed state if they were still attached; the
             // terminal is disposed, so the sequences below reach nothing either way. What is being
             // asserted is that driving the palette and an OSC sequence after disposal is quiet.
-            Assert.DoesNotThrow(() =>
+            ((Action)(() =>
             {
                 terminal.Colors.SetForeground(0x00FF00);
                 terminal.Write($"{Esc}]0;after disposal{Esc}\\");
                 Dispatcher.UIThread.RunJobs();
-            });
+            })).Should().NotThrow();
         }
         finally { window.Close(); }
     }
@@ -102,7 +99,7 @@ public class DisposalTests
         try
         {
             view.Dispose();
-            Assert.DoesNotThrow(() => view.Dispose());
+            ((Action)(() => view.Dispose())).Should().NotThrow();
         }
         finally { window.Close(); }
     }
@@ -121,8 +118,7 @@ public class DisposalTests
             window.Content = null;                    // detach
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(StillLive(terminal), Is.True,
-                "detaching is how this view gets MOVED; the terminal has to survive it");
+            StillLive(terminal).Should().BeTrue("detaching is how this view gets MOVED; the terminal has to survive it");
         }
         finally { window.Close(); }
     }
@@ -144,7 +140,7 @@ public class DisposalTests
             view.EndReparent();
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(StillLive(terminal), Is.True);
+            StillLive(terminal).Should().BeTrue();
         }
         finally { second.Close(); window.Close(); }
     }
@@ -162,13 +158,13 @@ public class DisposalTests
             view.Dispose();
             window.Content = null;
 
-            Assert.DoesNotThrow(() =>
+            ((Action)(() =>
             {
                 second.Content = view;
                 second.Show();
                 second.UpdateLayout();
                 Dispatcher.UIThread.RunJobs();
-            });
+            })).Should().NotThrow();
         }
         finally { second.Close(); window.Close(); }
     }
@@ -185,7 +181,7 @@ public class DisposalTests
 
             control.Dispose();
 
-            Assert.That(StillLive(terminal), Is.False);
+            StillLive(terminal).Should().BeFalse();
         }
         finally { window.Close(); }
     }
@@ -196,6 +192,6 @@ public class DisposalTests
         // There is no inner view before the template is applied, and a caller disposing early
         // should not have to know that.
         var control = new TerminalControl { Process = "" };
-        Assert.DoesNotThrow(() => control.Dispose());
+        ((Action)(() => control.Dispose())).Should().NotThrow();
     }
 }

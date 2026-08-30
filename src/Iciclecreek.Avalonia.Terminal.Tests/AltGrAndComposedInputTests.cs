@@ -1,8 +1,6 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -15,7 +13,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// TextInput with no key event behind it. Each was then handled as the thing it resembled, and the
 /// character was lost.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class AltGrAndComposedInputTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -30,7 +28,7 @@ public class AltGrAndComposedInputTests
         var pty = new RecordingConnection();
         view.AttachConnection(pty);
         view.Focus();
-        Assert.That(view.IsFocused, Is.True, "sanity: the key handlers return early without focus");
+        view.IsFocused.Should().BeTrue("sanity: the key handlers return early without focus");
         return (view, pty, window);
     }
 
@@ -85,7 +83,7 @@ public class AltGrAndComposedInputTests
             Press(view, Key.Q, KeyModifiers.Control | KeyModifiers.Alt, "@");
             var sent = Settled(pty);
 
-            Assert.That(sent, Is.EqualTo("@"), "got: " + Readable(sent));
+            sent.Should().Be("@", "got: " + Readable(sent));
         }
         finally { window.Close(); }
     }
@@ -102,8 +100,8 @@ public class AltGrAndComposedInputTests
             Press(view, Key.Q, KeyModifiers.Control | KeyModifiers.Alt, "q");
             var sent = Settled(pty);
 
-            Assert.That(sent, Is.Not.EqualTo("q"), "a chord must not arrive as a plain letter");
-            Assert.That(sent, Does.Contain(Esc), "it is Alt-prefixed, as a chord is: " + Readable(sent));
+            sent.Should().NotBe("q", "a chord must not arrive as a plain letter");
+            sent.Should().Contain(Esc, "it is Alt-prefixed, as a chord is: " + Readable(sent));
         }
         finally { window.Close(); }
     }
@@ -117,7 +115,7 @@ public class AltGrAndComposedInputTests
             Press(view, Key.C, KeyModifiers.Control, "c");
             var sent = Settled(pty);
 
-            Assert.That(sent, Is.EqualTo(((char)0x03).ToString()), "Ctrl+C is still ETX: " + Readable(sent));
+            sent.Should().Be(((char)0x03).ToString(), "Ctrl+C is still ETX: " + Readable(sent));
         }
         finally { window.Close(); }
     }
@@ -141,8 +139,7 @@ public class AltGrAndComposedInputTests
             var sent = Settled(pty);
 
             // VK_PACKET is 0xE7 = 231, and the character is its unicode field.
-            Assert.That(sent, Does.Contain($"{Esc}[231;0;{(int)'は'};1;0;1_"),
-                "expected a VK_PACKET record pair: " + Readable(sent));
+            sent.Should().Contain($"{Esc}[231;0;{(int)'は'};1;0;1_", "expected a VK_PACKET record pair: " + Readable(sent));
         }
         finally { window.Close(); }
     }
@@ -164,10 +161,8 @@ public class AltGrAndComposedInputTests
             var textInput = TypeText(view, "a");
             Thread.Sleep(200);
 
-            Assert.That(pty.Written, Is.EqualTo(afterKey),
-                "the keystroke was already reported; its text must not be sent again");
-            Assert.That(textInput.Handled, Is.True,
-                "duplicate text was consumed by the terminal and must not bubble to a parent");
+            pty.Written.Should().Be(afterKey, "the keystroke was already reported; its text must not be sent again");
+            textInput.Handled.Should().BeTrue("duplicate text was consumed by the terminal and must not bubble to a parent");
         }
         finally { window.Close(); }
     }
@@ -189,7 +184,7 @@ public class AltGrAndComposedInputTests
             TypeText(view, "は");
             var composed = Settled(pty)[beforeComposition.Length..];
 
-            Assert.That(composed, Does.Contain($"{Esc}[231;0;{(int)'は'};1;0;1_"));
+            composed.Should().Contain($"{Esc}[231;0;{(int)'は'};1;0;1_");
         }
         finally { window.Close(); }
     }
@@ -206,9 +201,9 @@ public class AltGrAndComposedInputTests
             TypeText(view, "😀");
             var sent = Settled(pty);
 
-            Assert.That(sent, Does.Contain($"{Esc}[231;0;{(int)'\ud83d'};1;0;1_"));
-            Assert.That(sent, Does.Contain($"{Esc}[231;0;{(int)'\ude00'};1;0;1_"));
-            Assert.That(sent, Does.Not.Contain("128512"), "UnicodeChar is a 16-bit WCHAR");
+            sent.Should().Contain($"{Esc}[231;0;{(int)'\ud83d'};1;0;1_");
+            sent.Should().Contain($"{Esc}[231;0;{(int)'\ude00'};1;0;1_");
+            sent.Should().NotContain("128512", "UnicodeChar is a 16-bit WCHAR");
         }
         finally { window.Close(); }
     }
@@ -222,7 +217,7 @@ public class AltGrAndComposedInputTests
             TypeText(view, "は");
             var sent = Settled(pty);
 
-            Assert.That(sent, Is.EqualTo("は"));
+            sent.Should().Be("は");
         }
         finally { window.Close(); }
     }
@@ -235,25 +230,25 @@ public class AltGrAndComposedInputTests
         // Avalonia's KeyModifiers carries no handedness -- Alt is Alt whichever one is down -- so a
         // right modifier was reported as the left one, and a program watching for RIGHT_ALT (which is
         // how Windows spells AltGr) never saw it.
-        Assert.That(State(KeyModifiers.Alt, Key.RightAlt) & 0x0001, Is.Not.Zero, "RightAltPressed");
-        Assert.That(State(KeyModifiers.Alt, Key.RightAlt) & 0x0002, Is.Zero, "and not LeftAltPressed");
+        (State(KeyModifiers.Alt, Key.RightAlt) & 0x0001).Should().NotBe(0, "RightAltPressed");
+        (State(KeyModifiers.Alt, Key.RightAlt) & 0x0002).Should().Be(0, "and not LeftAltPressed");
 
-        Assert.That(State(KeyModifiers.Control, Key.RightCtrl) & 0x0004, Is.Not.Zero, "RightCtrlPressed");
-        Assert.That(State(KeyModifiers.Control, Key.RightCtrl) & 0x0008, Is.Zero, "and not LeftCtrlPressed");
+        (State(KeyModifiers.Control, Key.RightCtrl) & 0x0004).Should().NotBe(0, "RightCtrlPressed");
+        (State(KeyModifiers.Control, Key.RightCtrl) & 0x0008).Should().Be(0, "and not LeftCtrlPressed");
     }
 
     [AvaloniaTest]
     public void The_left_hand_modifiers_are_still_reported_as_left_hand()
     {
-        Assert.That(State(KeyModifiers.Alt, Key.LeftAlt) & 0x0002, Is.Not.Zero, "LeftAltPressed");
-        Assert.That(State(KeyModifiers.Control, Key.LeftCtrl) & 0x0008, Is.Not.Zero, "LeftCtrlPressed");
+        (State(KeyModifiers.Alt, Key.LeftAlt) & 0x0002).Should().NotBe(0, "LeftAltPressed");
+        (State(KeyModifiers.Control, Key.LeftCtrl) & 0x0008).Should().NotBe(0, "LeftCtrlPressed");
     }
 
     private static int State(KeyModifiers modifiers, Key key)
     {
         var m = typeof(TerminalView).GetMethod("GetWin32ControlKeyState",
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(m, Is.Not.Null, "GetWin32ControlKeyState has been renamed; this test needs updating");
+        m.Should().NotBeNull("GetWin32ControlKeyState has been renamed; this test needs updating");
         return (int)m!.Invoke(null, new object[] { modifiers, key })!;
     }
 
@@ -277,13 +272,11 @@ public class AltGrAndComposedInputTests
             var selection = client.GetType().GetProperty("Selection")!.GetValue(client)!;
             var start = (int)selection.GetType().GetProperty("Start")!.GetValue(selection)!;
 
-            Assert.That(start, Is.LessThanOrEqualTo(text.Length),
-                "a caret past the end of the text it indexes is not a position in it");
-            Assert.That(text, Does.StartWith("é"), "sanity: the cluster is one cell of two chars");
+            start.Should().BeLessThanOrEqualTo(text.Length, "a caret past the end of the text it indexes is not a position in it");
+            text.Should().StartWith("é", "sanity: the cluster is one cell of two chars");
 
             // Two cells written, so the caret is at cell 2 -- which is offset 3 in the text, not 2.
-            Assert.That(start, Is.EqualTo(3),
-                "the caret must be an offset into the surrounding text, not a column number");
+            start.Should().Be(3, "the caret must be an offset into the surrounding text, not a column number");
         }
         finally { window.Close(); }
     }
@@ -302,8 +295,8 @@ public class AltGrAndComposedInputTests
             var selection = client.GetType().GetProperty("Selection")!.GetValue(client)!;
             var start = (int)selection.GetType().GetProperty("Start")!.GetValue(selection)!;
 
-            Assert.That(text, Does.StartWith("界"));
-            Assert.That(start, Is.EqualTo(1), "the continuation cell contributes no text");
+            text.Should().StartWith("界");
+            start.Should().Be(1, "the continuation cell contributes no text");
         }
         finally { window.Close(); }
     }
@@ -312,9 +305,9 @@ public class AltGrAndComposedInputTests
     {
         var f = typeof(TerminalView).GetField("_inputMethodClient",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(f, Is.Not.Null, "_inputMethodClient has been renamed; this test needs updating");
+        f.Should().NotBeNull("_inputMethodClient has been renamed; this test needs updating");
         var client = f!.GetValue(view);
-        Assert.That(client, Is.Not.Null, "the view has no IME client");
+        client.Should().NotBeNull("the view has no IME client");
         return client!;
     }
 }

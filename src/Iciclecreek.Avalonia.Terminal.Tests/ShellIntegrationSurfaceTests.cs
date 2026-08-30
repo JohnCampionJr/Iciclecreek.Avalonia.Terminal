@@ -1,10 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Input.TextInput;
 using Avalonia.Media;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -14,7 +12,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>All of it is reachable from a host: methods it can bind, data it can draw from, and
 /// properties it can style. Nothing here binds a key or picks a colour.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ShellIntegrationSurfaceTests
 {
     private const string Esc = "\u001b";
@@ -92,9 +90,9 @@ public class ShellIntegrationSurfaceTests
 
             var found = view.FindUrlAtColumn(view.Terminal.Buffer.ViewportY, 3);
 
-            Assert.That(found, Is.Not.Null, "the regex could never have found this");
-            Assert.That(found!.Url, Is.EqualTo("https://example.com/deep"));
-            Assert.That(found.FromSequence, Is.True);
+            found.Should().NotBeNull("the regex could never have found this");
+            (found!.Url).Should().Be("https://example.com/deep");
+            found.FromSequence.Should().BeTrue();
         }
         finally { window.Close(); }
     }
@@ -110,8 +108,8 @@ public class ShellIntegrationSurfaceTests
 
             var found = view.FindUrlAtColumn(view.Terminal.Buffer.ViewportY, 2);
 
-            Assert.That(found!.Url, Is.EqualTo("https://declared.example"));
-            Assert.That(found.FromSequence, Is.True);
+            (found!.Url).Should().Be("https://declared.example");
+            found.FromSequence.Should().BeTrue();
         }
         finally { window.Close(); }
     }
@@ -127,9 +125,9 @@ public class ShellIntegrationSurfaceTests
 
             var found = view.FindUrlAtColumn(view.Terminal.Buffer.ViewportY, 6);
 
-            Assert.That(found, Is.Not.Null);
-            Assert.That(found!.Url, Is.EqualTo("https://example.com"));
-            Assert.That(found.FromSequence, Is.False);
+            found.Should().NotBeNull();
+            (found!.Url).Should().Be("https://example.com");
+            found.FromSequence.Should().BeFalse();
         }
         finally { window.Close(); }
     }
@@ -148,8 +146,8 @@ public class ShellIntegrationSurfaceTests
 
             var found = view.FindUrlAtColumn(view.Terminal.Buffer.ViewportY, 1);
 
-            Assert.That(found, Is.Not.Null);
-            Assert.That(found!.Segments.Count, Is.EqualTo(2), "both halves should light up");
+            found.Should().NotBeNull();
+            (found!.Segments.Count).Should().Be(2, "both halves should light up");
         }
         finally { window.Close(); }
     }
@@ -168,8 +166,8 @@ public class ShellIntegrationSurfaceTests
 
             var before = view.Terminal.Buffer.ViewportY;
 
-            Assert.That(view.ScrollToPreviousPrompt(), Is.True);
-            Assert.That(view.Terminal.Buffer.ViewportY, Is.LessThan(before));
+            view.ScrollToPreviousPrompt().Should().BeTrue();
+            view.Terminal.Buffer.ViewportY.Should().BeLessThan(before);
         }
         finally { window.Close(); }
     }
@@ -182,9 +180,8 @@ public class ShellIntegrationSurfaceTests
         {
             view.Terminal.Write("just output\r\n");
 
-            Assert.That(view.ScrollToPreviousPrompt(), Is.False,
-                        "a host needs to know so it can leave the key to something else");
-            Assert.That(view.ScrollToNextPrompt(), Is.False);
+            view.ScrollToPreviousPrompt().Should().BeFalse("a host needs to know so it can leave the key to something else");
+            view.ScrollToNextPrompt().Should().BeFalse();
         }
         finally { window.Close(); }
     }
@@ -203,12 +200,12 @@ public class ShellIntegrationSurfaceTests
             view.Terminal.Write("compiling\r\nlinking\r\n");
             view.Terminal.Write(Mark("D;0") + Mark("A") + "$ ");
 
-            Assert.That(view.SelectCommandOutput(view.Terminal.Buffer.ViewportY + 1), Is.True);
+            view.SelectCommandOutput(view.Terminal.Buffer.ViewportY + 1).Should().BeTrue();
 
             var text = view.Terminal.Selection.GetSelectionText();
-            Assert.That(text, Does.Contain("compiling"));
-            Assert.That(text, Does.Contain("linking"));
-            Assert.That(text, Does.Not.Contain("$ build"));
+            text.Should().Contain("compiling");
+            text.Should().Contain("linking");
+            text.Should().NotContain("$ build");
         }
         finally { window.Close(); }
     }
@@ -221,7 +218,7 @@ public class ShellIntegrationSurfaceTests
         {
             view.Terminal.Write("plain output with no marks at all\r\n");
 
-            Assert.That(view.SelectCommandOutput(view.Terminal.Buffer.ViewportY), Is.False);
+            view.SelectCommandOutput(view.Terminal.Buffer.ViewportY).Should().BeFalse();
         }
         finally { window.Close(); }
     }
@@ -238,9 +235,9 @@ public class ShellIntegrationSurfaceTests
 
             var marks = view.VisibleMarks;
 
-            Assert.That(marks.Any(m => m.Kind == XTerm.Common.ShellIntegrationMark.PromptStart));
-            Assert.That(marks.Single(m => m.ExitCode is not null).ExitCode, Is.EqualTo(3));
-            Assert.That(marks.All(m => m.ViewportRow >= 0));
+            marks.Any(m => m.Kind == XTerm.Common.ShellIntegrationMark.PromptStart).Should().BeTrue();
+            (marks.Single(m => m.ExitCode is not null).ExitCode).Should().Be(3);
+            marks.All(m => m.ViewportRow >= 0).Should().BeTrue();
         }
         finally { window.Close(); }
     }
@@ -254,10 +251,10 @@ public class ShellIntegrationSurfaceTests
         var (view, window) = Realised();
         try
         {
-            Assert.That(view.GutterWidth, Is.Zero);
-            Assert.That(view.GutterSuccessBrush, Is.Null);
-            Assert.That(view.GutterFailureBrush, Is.Null);
-            Assert.That(view.GutterPromptBrush, Is.Null);
+            view.GutterWidth.Should().Be(0);
+            view.GutterSuccessBrush.Should().BeNull();
+            view.GutterFailureBrush.Should().BeNull();
+            view.GutterPromptBrush.Should().BeNull();
         }
         finally { window.Close(); }
     }
@@ -279,8 +276,7 @@ public class ShellIntegrationSurfaceTests
             view.InvalidateArrange();
             window.UpdateLayout();
 
-            Assert.That(view.Terminal.Cols, Is.LessThan(before),
-                        "the columns should have been taken out of the width");
+            view.Terminal.Cols.Should().BeLessThan(before, "the columns should have been taken out of the width");
         }
         finally { window.Close(); }
     }
@@ -302,8 +298,8 @@ public class ShellIntegrationSurfaceTests
             window.UpdateLayout();
 
             var view = control.View();
-            Assert.That(view.GutterWidth, Is.EqualTo(9));
-            Assert.That(view.GutterFailureBrush, Is.EqualTo(Brushes.Crimson));
+            view.GutterWidth.Should().Be(9);
+            view.GutterFailureBrush.Should().Be(Brushes.Crimson);
         }
         finally { window.Close(); }
     }
@@ -334,13 +330,10 @@ public class ShellIntegrationSurfaceTests
 
             var fills = GutterFills(view);
 
-            Assert.That(fills.Count, Is.EqualTo(2),
-                        "one bar per row: the lane was filled once per mark");
-            Assert.That(fills[0].Brush, Is.EqualTo(Brushes.Blue),
-                        "the first prompt's row is not the prompt colour");
+            fills.Count.Should().Be(2, "one bar per row: the lane was filled once per mark");
+            fills[0].Brush.Should().Be(Brushes.Blue, "the first prompt's row is not the prompt colour");
             // Paint order is list order, so the LAST fill on the row is what a user sees.
-            Assert.That(fills[1].Brush, Is.EqualTo(Brushes.Red),
-                        "the failure bar was painted over by the prompt sharing its row");
+            fills[1].Brush.Should().Be(Brushes.Red, "the failure bar was painted over by the prompt sharing its row");
         }
         finally { window.Close(); }
     }
@@ -356,7 +349,7 @@ public class ShellIntegrationSurfaceTests
         try
         {
             var client = ImeClient(view);
-            Assert.That(client, Is.Not.Null, "the view handed out no IME client");
+            client.Should().NotBeNull("the view handed out no IME client");
 
             view.GutterWidth = 0;
             var bare = client.CursorRectangle.X;
@@ -364,8 +357,7 @@ public class ShellIntegrationSurfaceTests
             view.GutterWidth = 12;
             var shifted = client.CursorRectangle.X;
 
-            Assert.That(shifted - bare, Is.EqualTo(12).Within(0.01),
-                        "the composition window sits GutterWidth px left of the caret");
+            (shifted - bare).Should().BeApproximately(12, 0.01, "the composition window sits GutterWidth px left of the caret");
         }
         finally { window.Close(); }
     }

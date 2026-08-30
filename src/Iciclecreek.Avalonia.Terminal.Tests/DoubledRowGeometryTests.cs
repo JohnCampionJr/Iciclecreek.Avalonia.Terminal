@@ -1,7 +1,5 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// backend to produce. They are the whole content of the fix: every one of these overlays multiplies
 /// by what they return.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class DoubledRowGeometryTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -40,7 +38,7 @@ public class DoubledRowGeometryTests
     {
         var m = typeof(TerminalView).GetMethod(name,
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(m, Is.Not.Null, $"{name} has been renamed; this test needs updating");
+        m.Should().NotBeNull($"{name} has been renamed; this test needs updating");
         return (T)m!.Invoke(view, args)!;
     }
 
@@ -53,12 +51,12 @@ public class DoubledRowGeometryTests
             view.Terminal.Write("plain");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(Scale(view, Row(view)), Is.EqualTo(1.0));
+            Scale(view, Row(view)).Should().Be(1.0);
         }
         finally { window.Close(); }
     }
 
-    // One method per attribute rather than [TestCase], because a plain NUnit case does not get the
+    // One method per attribute rather than [DataRow], because a plain NUnit case does not get the
     // Avalonia application this fixture needs -- it runs the view's static constructor with no
     // platform and takes the rest of the assembly down with it. [AvaloniaTest] does not combine with
     // TestCase here, so three bodies it is.
@@ -80,7 +78,7 @@ public class DoubledRowGeometryTests
             view.Terminal.Write($"{Esc}{sequence}doubled");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(Scale(view, Row(view)), Is.EqualTo(2.0));
+            Scale(view, Row(view)).Should().Be(2.0);
         }
         finally { window.Close(); }
     }
@@ -94,7 +92,7 @@ public class DoubledRowGeometryTests
             view.Terminal.Write("abc");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(Invoke<int>(view, "CellWidthAt", Row(view), 0), Is.EqualTo(1));
+            (Invoke<int>(view, "CellWidthAt", Row(view), 0)).Should().Be(1);
         }
         finally { window.Close(); }
     }
@@ -111,8 +109,7 @@ public class DoubledRowGeometryTests
             view.Terminal.Write("你");   // CJK, two columns
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(Invoke<int>(view, "CellWidthAt", Row(view), 0), Is.EqualTo(2),
-                "sanity: the emulator laid it out as a wide cell");
+            (Invoke<int>(view, "CellWidthAt", Row(view), 0)).Should().Be(2, "sanity: the emulator laid it out as a wide cell");
         }
         finally { window.Close(); }
     }
@@ -125,9 +122,9 @@ public class DoubledRowGeometryTests
         var (view, window) = Realised();
         try
         {
-            Assert.That(Scale(view, 100_000), Is.EqualTo(1.0));
-            Assert.That(Invoke<int>(view, "CellWidthAt", 100_000, 0), Is.EqualTo(1));
-            Assert.That(Invoke<int>(view, "CellWidthAt", Row(view), 100_000), Is.EqualTo(1));
+            Scale(view, 100_000).Should().Be(1.0);
+            (Invoke<int>(view, "CellWidthAt", 100_000, 0)).Should().Be(1);
+            (Invoke<int>(view, "CellWidthAt", Row(view), 100_000)).Should().Be(1);
         }
         finally { window.Close(); }
     }

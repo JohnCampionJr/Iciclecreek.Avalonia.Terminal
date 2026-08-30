@@ -1,6 +1,4 @@
 using System.Reflection;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -19,7 +17,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// could not style the cursor, drive a scrollbar, copy a selection, or take ownership of a PTY. #19's
 /// reporter hit the same shape of problem and resorted to reflection.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class SurfaceParityTests
 {
     /// <summary>
@@ -86,8 +84,7 @@ public class SurfaceParityTests
     {
         var missing = MissingFrom(typeof(TerminalControl));
 
-        Assert.That(missing, Is.Empty,
-            "TerminalControl is the type most hosts actually use; anything reachable only on the inner view "
+        missing.Should().BeEmpty("TerminalControl is the type most hosts actually use; anything reachable only on the inner view "
             + "is effectively unreachable, and the workaround is reflection. Missing: " + string.Join(", ", missing));
     }
 
@@ -96,8 +93,7 @@ public class SurfaceParityTests
     {
         var missing = MissingFrom(typeof(TerminalWindow));
 
-        Assert.That(missing, Is.Empty,
-            "Missing: " + string.Join(", ", missing));
+        missing.Should().BeEmpty("Missing: " + string.Join(", ", missing));
     }
 
     /// <summary>
@@ -120,6 +116,6 @@ public class SurfaceParityTests
             .OrderBy(n => n)
             .ToList();
 
-        Assert.That(missing, Is.Empty, "Missing: " + string.Join(", ", missing));
+        missing.Should().BeEmpty("Missing: " + string.Join(", ", missing));
     }
 }

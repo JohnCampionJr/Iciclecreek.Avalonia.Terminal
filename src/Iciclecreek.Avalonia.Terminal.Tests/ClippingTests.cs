@@ -1,9 +1,7 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Iciclecreek.Avalonia.Terminal;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>Asserted on the geometry these draws are given rather than on pixels, which headless
 /// Avalonia has no backend to produce.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class ClippingTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -49,8 +47,8 @@ public class ClippingTests
         var (view, window) = Realised();
         try
         {
-            Assert.That(CharWidth(view), Is.GreaterThan(0));
-            Assert.That(CharHeight(view), Is.GreaterThan(0));
+            CharWidth(view).Should().BeGreaterThan(0);
+            CharHeight(view).Should().BeGreaterThan(0);
         }
         finally { window.Close(); }
     }
@@ -68,17 +66,14 @@ public class ClippingTests
         {
             var cols = view.Terminal.Cols;
 
-            Assert.That(TerminalView.ClampSpanToGrid(cols - 2, cols + 40, cols, out var start, out var end),
-                Is.True, "part of it is still on screen, so it still draws");
-            Assert.That(end, Is.EqualTo(cols), "a hit cannot end past the last column");
-            Assert.That(start, Is.EqualTo(cols - 2), "and its visible part is unchanged");
+            TerminalView.ClampSpanToGrid(cols - 2, cols + 40, cols, out var start, out var end).Should().BeTrue("part of it is still on screen, so it still draws");
+            end.Should().Be(cols, "a hit cannot end past the last column");
+            start.Should().Be(cols - 2, "and its visible part is unchanged");
 
-            Assert.That(TerminalView.ClampSpanToGrid(cols + 5, cols + 40, cols, out _, out _),
-                Is.False, "a hit entirely past the end draws nothing at all");
+            TerminalView.ClampSpanToGrid(cols + 5, cols + 40, cols, out _, out _).Should().BeFalse("a hit entirely past the end draws nothing at all");
 
-            Assert.That(TerminalView.ClampSpanToGrid(-5, 3, cols, out var negStart, out _),
-                Is.True);
-            Assert.That(negStart, Is.Zero, "nor before the first column");
+            TerminalView.ClampSpanToGrid(-5, 3, cols, out var negStart, out _).Should().BeTrue();
+            negStart.Should().Be(0, "nor before the first column");
         }
         finally { window.Close(); }
     }
@@ -98,15 +93,11 @@ public class ClippingTests
 
             var drawn = TerminalView.FitWidth(posX, measured: 5000.0, right: contentRight);
 
-            Assert.That(posX + drawn, Is.LessThanOrEqualTo(contentRight),
-                "the composition must stop at the content edge");
-            Assert.That(drawn, Is.EqualTo(2 * CharWidth(view)).Within(0.001),
-                "and draw exactly the two cells that fit");
+            (posX + drawn).Should().BeLessThanOrEqualTo(contentRight, "the composition must stop at the content edge");
+            drawn.Should().BeApproximately(2 * CharWidth(view), 0.001, "and draw exactly the two cells that fit");
 
-            Assert.That(TerminalView.FitWidth(posX, measured: 5.0, right: contentRight), Is.EqualTo(5.0),
-                "a composition that fits is not narrowed");
-            Assert.That(TerminalView.FitWidth(contentRight + 10, 100, contentRight), Is.Zero,
-                "one starting past the edge draws nothing");
+            TerminalView.FitWidth(posX, measured: 5.0, right: contentRight).Should().Be(5.0, "a composition that fits is not narrowed");
+            TerminalView.FitWidth(contentRight + 10, 100, contentRight).Should().Be(0, "one starting past the edge draws nothing");
         }
         finally { window.Close(); }
     }
@@ -124,9 +115,7 @@ public class ClippingTests
             Dispatcher.UIThread.RunJobs();
 
             var palette = view.Terminal.Colors.Take();
-            Assert.That(BufferCellExtensions.FromRgb(palette.Background),
-                Is.EqualTo(Color.FromRgb(0x11, 0x22, 0x33)),
-                "sanity: the emulator took the colour, which is the half that already worked");
+            BufferCellExtensions.FromRgb(palette.Background).Should().Be(Color.FromRgb(0x11, 0x22, 0x33), "sanity: the emulator took the colour, which is the half that already worked");
         }
         finally { window.Close(); }
     }
@@ -158,12 +147,12 @@ public class ClippingTests
             view.Terminal.Selection.SelectAll();
             Dispatcher.UIThread.RunJobs();
 
-            Assert.DoesNotThrow(() =>
+            ((Action)(() =>
             {
                 view.InvalidateVisual();
                 window.UpdateLayout();
                 Dispatcher.UIThread.RunJobs();
-            });
+            })).Should().NotThrow();
         }
         finally { window.Close(); }
     }

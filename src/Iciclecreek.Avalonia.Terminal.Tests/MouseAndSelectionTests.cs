@@ -1,8 +1,6 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -14,7 +12,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// after something moved underneath it -- the viewport scrolled, or the whole screen was swapped.
 /// The fifth is the opposite complaint, a report sent far more often than anything changed.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class MouseAndSelectionTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -49,12 +47,12 @@ public class MouseAndSelectionTests
 
             view.Terminal.Selection.SelectAll();
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity: there is a selection");
+            view.Terminal.Selection.HasSelection.Should().BeTrue("sanity: there is a selection");
 
             view.Terminal.Write($"{Esc}[?1049h");   // to the alternate screen
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(view.Terminal.Selection.HasSelection, Is.False);
+            view.Terminal.Selection.HasSelection.Should().BeFalse();
         }
         finally { window.Close(); }
     }
@@ -73,12 +71,12 @@ public class MouseAndSelectionTests
             Dispatcher.UIThread.RunJobs();
             view.Terminal.Selection.SelectAll();
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity");
+            view.Terminal.Selection.HasSelection.Should().BeTrue("sanity");
 
             view.Terminal.Write($"{Esc}[?1049l");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(view.Terminal.Selection.HasSelection, Is.False);
+            view.Terminal.Selection.HasSelection.Should().BeFalse();
         }
         finally { window.Close(); }
     }
@@ -101,8 +99,7 @@ public class MouseAndSelectionTests
             for (var i = 0; i < view.Terminal.Rows + 10; i++)
                 view.Terminal.Write($"line {i}\r\n");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Terminal.Buffer.ViewportY, Is.GreaterThan(0),
-                "sanity: without a scrolled viewport this proves nothing");
+            view.Terminal.Buffer.ViewportY.Should().BeGreaterThan(0, "sanity: without a scrolled viewport this proves nothing");
 
             // The row is derived from the view's OWN cell height rather than assumed, so the test does
             // not depend on what font the platform resolved.
@@ -117,10 +114,9 @@ public class MouseAndSelectionTests
             for (var i = 0; i < 20; i++)
                 view.Terminal.Write($"filler {i}\r\n");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Terminal.Buffer.ViewportY, Is.GreaterThan(atPress), "sanity: it scrolled again");
+            view.Terminal.Buffer.ViewportY.Should().BeGreaterThan(atPress, "sanity: it scrolled again");
 
-            Assert.That(PendingAnchorRow(view), Is.EqualTo(anchorBefore),
-                "the anchor must still name the row that was under the pointer at the press");
+            PendingAnchorRow(view).Should().Be(anchorBefore, "the anchor must still name the row that was under the pointer at the press");
         }
         finally { window.Close(); }
     }
@@ -129,10 +125,10 @@ public class MouseAndSelectionTests
     {
         var f = typeof(TerminalView).GetField("_pendingSelectionStart",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(f, Is.Not.Null, "_pendingSelectionStart has been renamed; this test needs updating");
+        f.Should().NotBeNull("_pendingSelectionStart has been renamed; this test needs updating");
 
         var value = f!.GetValue(view);
-        Assert.That(value, Is.Not.Null, "no selection is pending, so there is nothing to check");
+        value.Should().NotBeNull("no selection is pending, so there is nothing to check");
 
         // Item2 rather than Row: the tuple's element names exist only at compile time, so there is
         // no Row property to reflect over and asking for one gets null back.
@@ -155,15 +151,14 @@ public class MouseAndSelectionTests
 
             Move(view, 40.0, 40.0);
             var afterFirst = AwaitOutput(pty).Length;
-            Assert.That(afterFirst, Is.GreaterThan(0), "sanity: motion is being reported at all");
+            afterFirst.Should().BeGreaterThan(0, "sanity: motion is being reported at all");
 
             // Four more events, all landing in the same cell.
             for (var i = 0; i < 4; i++)
                 Move(view, 40.0 + i, 40.0 + i);
             Thread.Sleep(120);
 
-            Assert.That(pty.Written.Length, Is.EqualTo(afterFirst),
-                "nothing changed in cell terms, so nothing more should have been sent");
+            pty.Written.Length.Should().Be(afterFirst, "nothing changed in cell terms, so nothing more should have been sent");
         }
         finally { window.Close(); }
     }
@@ -184,7 +179,7 @@ public class MouseAndSelectionTests
 
             Move(view, 400.0, 200.0);
 
-            Assert.That(AwaitOutput(pty, afterFirst).Length, Is.GreaterThan(afterFirst));
+            (AwaitOutput(pty, afterFirst).Length).Should().BeGreaterThan(afterFirst);
         }
         finally { window.Close(); }
     }
@@ -199,15 +194,14 @@ public class MouseAndSelectionTests
         try
         {
             Move(view, 40.0, 40.0);             // tracking off: nothing is sent
-            Assert.That(pty.Written, Is.Empty);
+            pty.Written.Should().BeEmpty();
 
             view.Terminal.Write($"{Esc}[?1003h");
             Dispatcher.UIThread.RunJobs();
 
             Move(view, 40.0, 40.0);             // same cell, now meaningful
 
-            Assert.That(AwaitOutput(pty), Is.Not.Empty,
-                "the first motion after tracking is enabled must reach the application");
+            AwaitOutput(pty).Should().NotBeEmpty("the first motion after tracking is enabled must reach the application");
         }
         finally { window.Close(); }
     }
@@ -223,12 +217,11 @@ public class MouseAndSelectionTests
 
             Move(view, 40.0, 40.0);
             var afterPlain = AwaitOutput(pty).Length;
-            Assert.That(afterPlain, Is.GreaterThan(0), "sanity: the first move was reported");
+            afterPlain.Should().BeGreaterThan(0, "sanity: the first move was reported");
 
             Move(view, 40.0, 40.0, KeyModifiers.Shift);
 
-            Assert.That(AwaitOutput(pty, afterPlain).Length, Is.GreaterThan(afterPlain),
-                "modifier state is part of the mouse report even when the cell is unchanged");
+            (AwaitOutput(pty, afterPlain).Length).Should().BeGreaterThan(afterPlain, "modifier state is part of the mouse report even when the cell is unchanged");
         }
         finally { window.Close(); }
     }
@@ -257,9 +250,8 @@ public class MouseAndSelectionTests
             Wheel(view, 3.0, KeyModifiers.Shift);
             Thread.Sleep(120);
 
-            Assert.That(view.ViewportY, Is.LessThan(before), "the terminal's own viewport must move");
-            Assert.That(pty.Written.Length, Is.EqualTo(mark),
-                "and the application must not be told about a gesture the host claimed");
+            view.ViewportY.Should().BeLessThan(before, "the terminal's own viewport must move");
+            pty.Written.Length.Should().Be(mark, "and the application must not be told about a gesture the host claimed");
         }
         finally { window.Close(); }
     }
@@ -276,7 +268,7 @@ public class MouseAndSelectionTests
             var mark = pty.Written.Length;
             Wheel(view, 3.0, KeyModifiers.None);
 
-            Assert.That(AwaitOutput(pty, mark).Length, Is.GreaterThan(mark));
+            (AwaitOutput(pty, mark).Length).Should().BeGreaterThan(mark);
         }
         finally { window.Close(); }
     }
@@ -310,9 +302,9 @@ public class MouseAndSelectionTests
     {
         var f = typeof(TerminalView).GetField("_charHeight",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(f, Is.Not.Null, "_charHeight has been renamed; this test needs updating");
+        f.Should().NotBeNull("_charHeight has been renamed; this test needs updating");
         var h = (double)f!.GetValue(view)!;
-        Assert.That(h, Is.GreaterThan(0), "the view has not measured its font yet");
+        h.Should().BeGreaterThan(0, "the view has not measured its font yet");
         return h;
     }
 

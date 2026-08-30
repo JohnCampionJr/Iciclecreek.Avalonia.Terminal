@@ -1,9 +1,7 @@
 using System.Text;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -20,7 +18,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// host had swallowed, so the application was told about a key going up that it was never told had
 /// gone down.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class KittyDispatchOrderTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -38,14 +36,13 @@ public class KittyDispatchOrderTests
         var pty = new RecordingConnection();
         view.AttachConnection(pty);
         view.Focus();
-        Assert.That(view.IsFocused, Is.True, "sanity: the key handlers return early without focus");
+        view.IsFocused.Should().BeTrue("sanity: the key handlers return early without focus");
 
         if (negotiate)
         {
             view.Terminal.Write(Esc + NegotiateAll);
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Terminal.KittyKeyboardActive, Is.True,
-                "sanity: the protocol has to be live or every assertion here is vacuous");
+            view.Terminal.KittyKeyboardActive.Should().BeTrue("sanity: the protocol has to be live or every assertion here is vacuous");
         }
 
         return (view, pty, window);
@@ -118,10 +115,8 @@ public class KittyDispatchOrderTests
             Press(view, Key.Left, KeyModifiers.Alt, PhysicalKey.ArrowLeft);
             var sent = AwaitAfter(pty, 0);
 
-            Assert.That(sent, Does.Not.Contain(Esc + "b"),
-                "ESC-b is the shell translation and must not survive the negotiation: " + Readable(sent));
-            Assert.That(sent, Does.StartWith(Esc + "["),
-                "the chord itself, in CSI-u form: " + Readable(sent));
+            sent.Should().NotContain(Esc + "b", "ESC-b is the shell translation and must not survive the negotiation: " + Readable(sent));
+            sent.Should().StartWith(Esc + "[", "the chord itself, in CSI-u form: " + Readable(sent));
         }
         finally { window.Close(); }
     }
@@ -138,7 +133,7 @@ public class KittyDispatchOrderTests
             Press(view, Key.Left, KeyModifiers.Alt, PhysicalKey.ArrowLeft);
             var sent = AwaitAfter(pty, 0);
 
-            Assert.That(sent, Is.EqualTo(Esc + "b"), "got: " + Readable(sent));
+            sent.Should().Be(Esc + "b", "got: " + Readable(sent));
         }
         finally { window.Close(); }
     }
@@ -160,11 +155,9 @@ public class KittyDispatchOrderTests
             // thread pool takes longer than that, so this failed there and nowhere else.
             var sent = AwaitAfter(pty, 0);
 
-            Assert.That(sent, Is.Not.Empty, "the negotiated protocol must receive the Meta chord");
-            Assert.That(sent, Does.StartWith(Esc + "["),
-                "the chord itself, in CSI-u form: " + Readable(sent));
-            Assert.That(sent, Is.Not.EqualTo(Esc + "[H"),
-                "the legacy macOS line-edge alias must remain disabled under Kitty");
+            sent.Should().NotBeEmpty("the negotiated protocol must receive the Meta chord");
+            sent.Should().StartWith(Esc + "[", "the chord itself, in CSI-u form: " + Readable(sent));
+            sent.Should().NotBe(Esc + "[H", "the legacy macOS line-edge alias must remain disabled under Kitty");
         }
         finally { window.Close(); }
     }
@@ -185,15 +178,13 @@ public class KittyDispatchOrderTests
 
             Press(view, Key.Left, KeyModifiers.Shift, PhysicalKey.ArrowLeft);
             Thread.Sleep(60);
-            Assert.That(view.Terminal.Selection.HasSelection, Is.True,
-                "sanity: the press has to be swallowed by the selection for this to be the case under test");
-            Assert.That(pty.Written, Is.Empty, "sanity: and nothing was sent for it");
+            view.Terminal.Selection.HasSelection.Should().BeTrue("sanity: the press has to be swallowed by the selection for this to be the case under test");
+            pty.Written.Should().BeEmpty("sanity: and nothing was sent for it");
 
             Release(view, Key.Left, KeyModifiers.Shift, PhysicalKey.ArrowLeft);
             Thread.Sleep(200);
 
-            Assert.That(pty.Written, Is.Empty,
-                "a release belongs to the host when its press did: " + Readable(pty.Written));
+            pty.Written.Should().BeEmpty("a release belongs to the host when its press did: " + Readable(pty.Written));
         }
         finally { window.Close(); }
     }
@@ -209,13 +200,12 @@ public class KittyDispatchOrderTests
         {
             Press(view, Key.A, KeyModifiers.None, PhysicalKey.A, "a");
             var afterPress = AwaitAfter(pty, 0);
-            Assert.That(afterPress, Is.Not.Empty, "sanity: the press went out");
+            afterPress.Should().NotBeEmpty("sanity: the press went out");
 
             Release(view, Key.A, KeyModifiers.None, PhysicalKey.A, "a");
             var afterRelease = AwaitAfter(pty, afterPress.Length);
 
-            Assert.That(afterRelease.Length, Is.GreaterThan(afterPress.Length),
-                "the matching release must still be reported: " + Readable(afterRelease));
+            afterRelease.Length.Should().BeGreaterThan(afterPress.Length, "the matching release must still be reported: " + Readable(afterRelease));
         }
         finally { window.Close(); }
     }
@@ -238,10 +228,8 @@ public class KittyDispatchOrderTests
             Press(view, Key.Escape, KeyModifiers.None, PhysicalKey.Escape);
             var sent = AwaitAfter(pty, 0);
 
-            Assert.That(sent, Does.Contain("27"),
-                "Escape is keycode 27 in CSI-u: " + Readable(sent));
-            Assert.That(sent, Does.Not.EndWith("_"),
-                "a trailing _ is a Win32 input record, which is not what was negotiated: " + Readable(sent));
+            sent.Should().Contain("27", "Escape is keycode 27 in CSI-u: " + Readable(sent));
+            sent.Should().NotEndWith("_", "a trailing _ is a Win32 input record, which is not what was negotiated: " + Readable(sent));
         }
         finally { window.Close(); }
     }

@@ -1,7 +1,5 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -16,7 +14,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// warning, which is worse than a break that throws, because the integration keeps compiling and
 /// keeps running while quietly ignoring its configuration.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class LiveOptionsTests
 {
     private static (TerminalView view, Window window) RealisedView()
@@ -34,7 +32,7 @@ public class LiveOptionsTests
         var (view, window) = RealisedView();
         try
         {
-            Assert.That(view.Options, Is.SameAs(view.Terminal.Options));
+            view.Options.Should().BeSameAs(view.Terminal.Options);
         }
         finally { window.Close(); }
     }
@@ -47,8 +45,7 @@ public class LiveOptionsTests
         {
             view.Options!.CursorBlink = !view.Terminal.Options.CursorBlink;
 
-            Assert.That(view.Options.CursorBlink, Is.EqualTo(view.Terminal.Options.CursorBlink),
-                "the property and the emulator must be looking at one object, not two");
+            view.Options.CursorBlink.Should().Be(view.Terminal.Options.CursorBlink, "the property and the emulator must be looking at one object, not two");
         }
         finally { window.Close(); }
     }
@@ -65,9 +62,8 @@ public class LiveOptionsTests
         window.UpdateLayout();
         try
         {
-            Assert.That(view.Terminal.Options, Is.Not.SameAs(mine));
-            Assert.That(view.Options, Is.Not.SameAs(mine),
-                "and the property must have followed the emulator rather than the caller's copy");
+            view.Terminal.Options.Should().NotBeSameAs(mine);
+            view.Options.Should().NotBeSameAs(mine, "and the property must have followed the emulator rather than the caller's copy");
         }
         finally { window.Close(); }
     }
@@ -86,7 +82,7 @@ public class LiveOptionsTests
         window.UpdateLayout();
         try
         {
-            Assert.That(view.Terminal.Options.TermName, Is.EqualTo("xterm-testing"));
+            view.Terminal.Options.TermName.Should().Be("xterm-testing");
         }
         finally { window.Close(); }
     }
@@ -103,7 +99,7 @@ public class LiveOptionsTests
             window.UpdateLayout();
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(control.Options, Is.SameAs(control.Terminal.Options));
+            control.Options.Should().BeSameAs(control.Terminal.Options);
         }
         finally { window.Close(); }
     }
@@ -120,7 +116,7 @@ public class LiveOptionsTests
 
             control.Options!.CursorBlink = !control.Terminal.Options.CursorBlink;
 
-            Assert.That(control.Options.CursorBlink, Is.EqualTo(control.Terminal.Options.CursorBlink));
+            control.Options.CursorBlink.Should().Be(control.Terminal.Options.CursorBlink);
         }
         finally { window.Close(); }
     }
@@ -152,8 +148,7 @@ public class LiveOptionsTests
             source.Value = replacement;
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(control.Options, Is.SameAs(replacement),
-                "a host that bound Options must still own the property after the control seeds "
+            control.Options.Should().BeSameAs(replacement, "a host that bound Options must still own the property after the control seeds "
                 + "itself from the view");
         }
         finally { window.Close(); }
@@ -184,7 +179,7 @@ public class LiveOptionsTests
 
             view.Options!.Scrollback = view.Options.Scrollback + 500;
 
-            Assert.That(view.Terminal.Buffer.Lines.MaxLength, Is.GreaterThan(before));
+            view.Terminal.Buffer.Lines.MaxLength.Should().BeGreaterThan(before);
         }
         finally { window.Close(); }
     }

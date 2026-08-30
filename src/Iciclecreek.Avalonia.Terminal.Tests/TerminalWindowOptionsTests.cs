@@ -1,5 +1,3 @@
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -21,7 +19,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>Asserted against <c>Terminal.Options</c>, never <c>view.Options</c>: those are different objects,
 /// and only the former is what the emulator actually consults.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalWindowOptionsTests
 {
     /// <summary>
@@ -37,17 +35,17 @@ public class TerminalWindowOptionsTests
         {
             var options = window.Control().Terminal.Options.WindowOptions;
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(options.MaximizeWin, Is.True, "TerminalWindow handles maximize but never asked for it");
-                Assert.That(options.MinimizeWin, Is.True, "TerminalWindow handles minimize but never asked for it");
-                Assert.That(options.RestoreWin, Is.True, "TerminalWindow handles restore but never asked for it");
-                Assert.That(options.FullscreenWin, Is.True, "TerminalWindow handles fullscreen but never asked for it");
-                Assert.That(options.RaiseWin, Is.True, "TerminalWindow handles raise but never asked for it");
-                Assert.That(options.LowerWin, Is.True, "TerminalWindow handles lower but never asked for it");
-                Assert.That(options.SetWinPosition, Is.True, "TerminalWindow handles move but never asked for it");
-                Assert.That(options.SetWinSizePixels, Is.True, "TerminalWindow handles resize but never asked for it");
-            });
+            using (new AssertionScope())
+        {
+                options.MaximizeWin.Should().BeTrue("TerminalWindow handles maximize but never asked for it");
+                options.MinimizeWin.Should().BeTrue("TerminalWindow handles minimize but never asked for it");
+                options.RestoreWin.Should().BeTrue("TerminalWindow handles restore but never asked for it");
+                options.FullscreenWin.Should().BeTrue("TerminalWindow handles fullscreen but never asked for it");
+                options.RaiseWin.Should().BeTrue("TerminalWindow handles raise but never asked for it");
+                options.LowerWin.Should().BeTrue("TerminalWindow handles lower but never asked for it");
+                options.SetWinPosition.Should().BeTrue("TerminalWindow handles move but never asked for it");
+                options.SetWinSizePixels.Should().BeTrue("TerminalWindow handles resize but never asked for it");
+            };
         }
         finally
         {
@@ -68,14 +66,14 @@ public class TerminalWindowOptionsTests
         {
             var options = window.Control().Terminal.Options.WindowOptions;
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(options.GetWinTitle, Is.True, "TerminalWindow answers title queries but never asked for them");
-                Assert.That(options.GetIconTitle, Is.True, "TerminalWindow answers icon-title queries but never asked for them");
-                Assert.That(options.GetWinPosition, Is.True, "TerminalWindow answers position queries but never asked for them");
-                Assert.That(options.GetWinSizePixels, Is.True, "TerminalWindow answers size queries but never asked for them");
-                Assert.That(options.GetWinState, Is.True, "TerminalWindow answers state queries but never asked for them");
-            });
+            using (new AssertionScope())
+        {
+                options.GetWinTitle.Should().BeTrue("TerminalWindow answers title queries but never asked for them");
+                options.GetIconTitle.Should().BeTrue("TerminalWindow answers icon-title queries but never asked for them");
+                options.GetWinPosition.Should().BeTrue("TerminalWindow answers position queries but never asked for them");
+                options.GetWinSizePixels.Should().BeTrue("TerminalWindow answers size queries but never asked for them");
+                options.GetWinState.Should().BeTrue("TerminalWindow answers state queries but never asked for them");
+            };
         }
         finally
         {
@@ -95,8 +93,7 @@ public class TerminalWindowOptionsTests
 
         try
         {
-            Assert.That(window.Control().Terminal.Options.WindowOptions.MaximizeWin, Is.True,
-                "supplying Options must not cost you the window-command support TerminalWindow advertises");
+            (window.Control().Terminal.Options.WindowOptions.MaximizeWin).Should().BeTrue("supplying Options must not cost you the window-command support TerminalWindow advertises");
         }
         finally
         {

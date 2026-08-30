@@ -1,5 +1,4 @@
 using Iciclecreek.Avalonia.Terminal;
-using NUnit.Framework;
 using XTerm;
 using XTerm.Buffer;
 using XTerm.Options;
@@ -14,7 +13,7 @@ namespace Iciclecreek.Avalonia.Terminal.Tests;
 /// point is how the emulator actually lays a sequence out — a fabricated fixture would encode the assumption
 /// under test. No Avalonia here: run building is pure text, so it needs no headless UI thread.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class GraphemeRunTests
 {
     private const string Zwj = "\u200D";
@@ -43,19 +42,19 @@ public class GraphemeRunTests
     /// <para>This test is why that arrived as a failing build rather than as a rendering fault somebody
     /// noticed weeks later. It was written to fail loudly if the packing ever moved, and it did.</para>
     /// </remarks>
-    [Test]
+    [TestMethod]
     public void Emulator_Keeps_A_Zwj_Sequence_In_One_Cell()
     {
         var line = LineOf(Family, out _);
 
-        Assert.That(line[0].Content, Is.EqualTo(Family), "the whole cluster, in one cell");
-        Assert.That(line[0].Width, Is.EqualTo(2), "and two columns wide, as the glyph is");
-        Assert.That(line[1].Width, Is.EqualTo(0), "wide cells are followed by a placeholder");
+        line[0].Content.Should().Be(Family, "the whole cluster, in one cell");
+        line[0].Width.Should().Be(2, "and two columns wide, as the glyph is");
+        line[1].Width.Should().Be(0, "wide cells are followed by a placeholder");
 
         // ORDINAL, deliberately. string.EndsWith(string) defaults to a CULTURE-SENSITIVE comparison, and
         // ICU treats U+200D as ignorable, so this assertion would hold under the default no matter what
         // the emulator did.
-        Assert.That(EndsWithJoiner(line[0].Content), Is.False, "nothing is left dangling for the renderer");
+        EndsWithJoiner(line[0].Content).Should().BeFalse("nothing is left dangling for the renderer");
     }
 
     /// <summary>
@@ -68,7 +67,7 @@ public class GraphemeRunTests
     /// would still meet the split form some of the time - and "some of the time" is how an intermittent
     /// rendering fault gets written.
     /// </remarks>
-    [Test]
+    [TestMethod]
     public void The_cluster_survives_arriving_in_two_writes()
     {
         var terminal = new XTerm.Terminal(new TerminalOptions());
@@ -79,15 +78,15 @@ public class GraphemeRunTests
         terminal.Write(Family.Substring(3));
 
         var line = terminal.Buffer.Lines[0]!;
-        Assert.That(line[0].Content, Is.EqualTo(Family), "still one cell, not two halves");
-        Assert.That(line[2].Content, Is.EqualTo(" "), "and nothing spilled into the next column");
+        line[0].Content.Should().Be(Family, "still one cell, not two halves");
+        line[2].Content.Should().Be(" ", "and nothing spilled into the next column");
     }
 
     /// <summary>
     /// With the cluster already whole, absorbing has nothing to do - it must leave the run exactly as it
     /// found it rather than reaching into the blanks past the glyph.
     /// </summary>
-    [Test]
+    [TestMethod]
     public void Absorbing_Is_A_No_Op_For_A_Complete_Sequence()
     {
         var line = LineOf(Family, out var terminal);
@@ -96,32 +95,32 @@ public class GraphemeRunTests
         var cellCount = 2;
         var text = GraphemeRuns.AbsorbJoinedCells(line, terminal.Cols, line[0], line[0].Content, ref x, ref cellCount);
 
-        Assert.That(text, Is.EqualTo(Family), "the shaper already had the whole cluster");
-        Assert.That(cellCount, Is.EqualTo(2), "two columns, which is what the glyph occupies");
-        Assert.That(x, Is.EqualTo(2), "and nothing beyond it was claimed");
+        text.Should().Be(Family, "the shaper already had the whole cluster");
+        cellCount.Should().Be(2, "two columns, which is what the glyph occupies");
+        x.Should().Be(2, "and nothing beyond it was claimed");
     }
 
     /// <summary>
     /// Heart-on-fire used to begin in a NARROW cell and continue into a wide one, which is the case the
     /// width-1 collection loop stopped short of. It is one wide cell now, like every other cluster.
     /// </summary>
-    [Test]
+    [TestMethod]
     public void A_Mixed_Width_Sequence_Is_One_Cell_Too()
     {
         var line = LineOf(HeartOnFire, out var terminal);
 
-        Assert.That(line[0].Content, Is.EqualTo(HeartOnFire));
-        Assert.That(line[0].Width, Is.EqualTo(2), "no longer narrow-then-wide");
+        line[0].Content.Should().Be(HeartOnFire);
+        line[0].Width.Should().Be(2, "no longer narrow-then-wide");
 
         var x = line[0].Width;
         var cellCount = line[0].Width;
         var text = GraphemeRuns.AbsorbJoinedCells(line, terminal.Cols, line[0], line[0].Content, ref x, ref cellCount);
 
-        Assert.That(text, Is.EqualTo(HeartOnFire));
-        Assert.That(cellCount, Is.EqualTo(line[0].Width), "nothing to pull in");
+        text.Should().Be(HeartOnFire);
+        cellCount.Should().Be(line[0].Width, "nothing to pull in");
     }
 
-    [Test]
+    [TestMethod]
     public void Leaves_An_Unjoined_Run_Untouched()
     {
         var line = LineOf("\U0001F600ab", out var terminal);   // 😀 then plain text
@@ -130,9 +129,9 @@ public class GraphemeRunTests
         var cellCount = 2;
         var text = GraphemeRuns.AbsorbJoinedCells(line, terminal.Cols, line[0], line[0].Content, ref x, ref cellCount);
 
-        Assert.That(text, Is.EqualTo("\U0001F600"), "no joiner means no continuation");
-        Assert.That(cellCount, Is.EqualTo(2));
-        Assert.That(x, Is.EqualTo(2), "and nothing is consumed");
+        text.Should().Be("\U0001F600", "no joiner means no continuation");
+        cellCount.Should().Be(2);
+        x.Should().Be(2, "and nothing is consumed");
     }
 
     /// <summary>
@@ -143,37 +142,37 @@ public class GraphemeRunTests
     /// attribute check, stretch <c>cellCount</c> a column past the glyph actually drawn, and leave that
     /// column out of the rest of the line's run building.</para>
     /// </summary>
-    [Test]
+    [TestMethod]
     public void A_Dangling_Joiner_On_A_Wide_Cell_Absorbs_Nothing()
     {
         var line = LineOf("\U0001F468" + Zwj, out var terminal);   // a lone man + joiner, nothing to join to
-        Assert.That(EndsWithJoiner(line[0].Content), Is.True, "precondition: the joiner is dangling");
-        Assert.That(line[2].Content, Is.EqualTo(" "), "precondition: the emulator blanks with spaces");
+        EndsWithJoiner(line[0].Content).Should().BeTrue("precondition: the joiner is dangling");
+        line[2].Content.Should().Be(" ", "precondition: the emulator blanks with spaces");
 
         // Exactly what the width-2 branch of the render loop leaves behind.
         var x = line[0].Width;
         var cellCount = line[0].Width;
         var text = GraphemeRuns.AbsorbJoinedCells(line, terminal.Cols, line[0], line[0].Content, ref x, ref cellCount);
 
-        Assert.That(text, Is.EqualTo(line[0].Content), "nothing joins to a blank");
-        Assert.That(cellCount, Is.EqualTo(2), "the run stays the width of the glyph it draws");
-        Assert.That(x, Is.EqualTo(2), "and the rest of the line is still there to be drawn");
+        text.Should().Be(line[0].Content, "nothing joins to a blank");
+        cellCount.Should().Be(2, "the run stays the width of the glyph it draws");
+        x.Should().Be(2, "and the rest of the line is still there to be drawn");
     }
 
     /// <summary>Same for a joiner dangling off a narrow cell, using that cell's real width rather than a guess.</summary>
-    [Test]
+    [TestMethod]
     public void A_Dangling_Joiner_On_A_Narrow_Cell_Absorbs_Nothing()
     {
         var line = LineOf("a" + Zwj, out var terminal);
-        Assert.That(EndsWithJoiner(line[0].Content), Is.True, "precondition: the joiner rides on the 'a'");
+        EndsWithJoiner(line[0].Content).Should().BeTrue("precondition: the joiner rides on the 'a'");
 
         var x = line[0].Width;
         var cellCount = line[0].Width;
         var text = GraphemeRuns.AbsorbJoinedCells(line, terminal.Cols, line[0], line[0].Content, ref x, ref cellCount);
 
-        Assert.That(text, Is.EqualTo("a" + Zwj));
-        Assert.That(cellCount, Is.EqualTo(line[0].Width), "no column beyond the 'a' belongs to this run");
-        Assert.That(x, Is.EqualTo(line[0].Width));
+        text.Should().Be("a" + Zwj);
+        cellCount.Should().Be(line[0].Width, "no column beyond the 'a' belongs to this run");
+        x.Should().Be(line[0].Width);
     }
 
     /// <summary>
@@ -186,7 +185,7 @@ public class GraphemeRunTests
     /// emulator version blanks with empty content instead, the failure would not be a missing ligature but
     /// one run stretched over a whole line, and this test is what would catch it.</para>
     /// </summary>
-    [Test]
+    [TestMethod]
     public void A_Cell_That_Contributes_Nothing_Ends_The_Walk()
     {
         var attrs = new AttributeData();
@@ -198,14 +197,16 @@ public class GraphemeRunTests
         var cellCount = 2;
         GraphemeRuns.AbsorbJoinedCells(line, 20, line[0], line[0].Content, ref x, ref cellCount);
 
-        Assert.That(x, Is.EqualTo(2), "an empty cell cannot continue the cluster, so the walk stops");
-        Assert.That(cellCount, Is.EqualTo(2), "and the run does not swallow the line");
+        x.Should().Be(2, "an empty cell cannot continue the cluster, so the walk stops");
+        cellCount.Should().Be(2, "and the run does not swallow the line");
     }
 
-    [TestCase(null, false)]
-    [TestCase("", false)]
-    [TestCase("a", false)]
-    [TestCase("a\u200D", true)]
+    [TestMethod]
+
+    [DataRow(null, false)]
+    [DataRow("", false)]
+    [DataRow("a", false)]
+    [DataRow("a\u200D", true)]
     public void ContinuesIntoNextCell_Reads_The_Trailing_Joiner(string? text, bool expected) =>
-        Assert.That(GraphemeRuns.ContinuesIntoNextCell(text), Is.EqualTo(expected));
+        GraphemeRuns.ContinuesIntoNextCell(text).Should().Be(expected);
 }

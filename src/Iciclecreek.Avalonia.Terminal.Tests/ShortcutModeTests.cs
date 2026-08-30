@@ -1,15 +1,13 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
 /// <summary>
 /// <see cref="TerminalView.ShortcutMode"/> — which convention Ctrl+A, Ctrl+C, Ctrl+V and Ctrl+X follow.
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ShortcutModeTests
 {
     private const string Esc = "\u001b";
@@ -34,20 +32,20 @@ public class ShortcutModeTests
     /// <summary>The Ctrl map is Windows/Linux only; macOS gets the Cmd gestures instead.</summary>
     private static void SkipUnlessCtrlPlatform()
     {
-        if (OnMac) Assert.Ignore("the Ctrl map is deliberately not applied on macOS");
+        if (OnMac) Assert.Inconclusive("the Ctrl map is deliberately not applied on macOS");
     }
 
     // ── Off by default: nothing changes ─────────────────────────────────────────────────────────
 
     [AvaloniaTest]
-    public void It_defaults_to_terminal() => Assert.That(new TerminalView().ShortcutMode, Is.EqualTo(ShortcutMode.Terminal));
+    public void It_defaults_to_terminal() => (new TerminalView().ShortcutMode).Should().Be(ShortcutMode.Terminal);
 
     /// <summary>
     /// With the option off, Ctrl+V and Ctrl+X still reach the program — quoted-insert and readline's prefix
     /// are exactly what upstream kept them for.
     /// </summary>
-    [TestCase(Key.V)]
-    [TestCase(Key.X)]
+    [DataRow(Key.V)]
+    [DataRow(Key.X)]
     [AvaloniaTest]
     public async Task Terminal_mode_leaves_the_keys_with_the_program(Key key)
     {
@@ -57,8 +55,7 @@ public class ShortcutModeTests
 
         Press(view, key, KeyModifiers.Control);
 
-        Assert.That(await PtyWaits.AwaitOutput(pty), Is.Not.Empty,
-            $"Ctrl+{key} still belongs to the program");
+        (await PtyWaits.AwaitOutput(pty)).Should().NotBeEmpty($"Ctrl+{key} still belongs to the program");
         window.Close();
     }
 
@@ -76,8 +73,7 @@ public class ShortcutModeTests
         Press(view, Key.A, KeyModifiers.Control);
         await Task.Delay(120);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
-            "the input, not the whole screen");
+        view.Terminal.Selection.GetSelectionText().Should().Be("hello world", "the input, not the whole screen");
         window.Close();
     }
 
@@ -89,21 +85,20 @@ public class ShortcutModeTests
         var (view, pty, window) = LiveView(ShortcutMode.Desktop);
 
         var clipboard = TopLevel.GetTopLevel(view)?.Clipboard;
-        Assert.That(clipboard, Is.Not.Null, "sanity: the headless top level has a clipboard");
+        clipboard.Should().NotBeNull("sanity: the headless top level has a clipboard");
         await clipboard!.SetTextAsync("pasted-text");
 
         Press(view, Key.V, KeyModifiers.Control);
 
-        Assert.That(await PtyWaits.AwaitOutput(pty), Is.EqualTo("pasted-text"),
-            "the clipboard reached the shell, not the quoted-insert control character");
+        (await PtyWaits.AwaitOutput(pty)).Should().Be("pasted-text", "the clipboard reached the shell, not the quoted-insert control character");
         window.Close();
     }
 
     /// <summary>
     /// Shift carries what the unshifted chord used to send, so nothing is lost — only moved.
     /// </summary>
-    [TestCase(Key.V, "\u0016")]
-    [TestCase(Key.X, "\u0018")]
+    [DataRow(Key.V, "\u0016")]
+    [DataRow(Key.X, "\u0018")]
     [AvaloniaTest]
     public async Task Shift_carries_the_literal_control_character(Key key, string expected)
     {
@@ -112,8 +107,7 @@ public class ShortcutModeTests
 
         Press(view, key, KeyModifiers.Control | KeyModifiers.Shift);
 
-        Assert.That(await PtyWaits.AwaitOutput(pty), Is.EqualTo(expected),
-            "the character the unshifted chord used to send");
+        (await PtyWaits.AwaitOutput(pty)).Should().Be(expected, "the character the unshifted chord used to send");
         window.Close();
     }
 
@@ -128,8 +122,7 @@ public class ShortcutModeTests
 
         Press(view, Key.X, KeyModifiers.Control);
 
-        Assert.That(await PtyWaits.AwaitOutput(pty), Is.EqualTo("\u0018"),
-            "Ctrl+X Ctrl+E and friends still work");
+        (await PtyWaits.AwaitOutput(pty)).Should().Be("\u0018", "Ctrl+X Ctrl+E and friends still work");
         window.Close();
     }
 
@@ -171,7 +164,7 @@ public class ShortcutModeTests
     /// Cut is copy AND removal — both halves asserted, because either alone would look like it worked.
     /// </summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Ctrl_x_cuts_the_selection()
     {
         SkipUnlessCtrlPlatform();
@@ -185,15 +178,15 @@ public class ShortcutModeTests
             Press(view, Key.Left, KeyModifiers.Shift);
             Press(view, Key.Left, KeyModifiers.Shift);
             await Task.Delay(300);
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity");
+            view.Terminal.Selection.GetSelectionText().Should().Be("rld", "sanity");
 
             Press(view, Key.X, KeyModifiers.Control);
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("hello wo"), "the selection was removed");
+            CursorRow(view).Should().EndWith("hello wo", "the selection was removed");
 
             var clipboard = TopLevel.GetTopLevel(view)?.Clipboard;
-            Assert.That(await clipboard!.TryGetTextAsync(), Is.EqualTo("rld"), "and it went to the clipboard");
+            (await clipboard!.TryGetTextAsync()).Should().Be("rld", "and it went to the clipboard");
         }
         finally
         {
@@ -204,12 +197,12 @@ public class ShortcutModeTests
 
     /// <summary>Cmd+X is the macOS spelling, and does not need the opt-in — the chord is unbound there.</summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Cmd_x_cuts_in_terminal_mode_too()
     {
         if (!System.Runtime.InteropServices.RuntimeInformation
                 .IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX))
-            Assert.Ignore("Cmd+X is a macOS gesture");
+            Assert.Inconclusive("Cmd+X is a macOS gesture");
 
         var (view, window) = await RealShell(ShortcutMode.Terminal);
         try
@@ -224,7 +217,7 @@ public class ShortcutModeTests
             Press(view, Key.X, KeyModifiers.Meta);
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("hello wor"));
+            CursorRow(view).Should().EndWith("hello wor");
         }
         finally
         {
@@ -240,15 +233,14 @@ public class ShortcutModeTests
     [AvaloniaTest]
     public async Task On_mac_desktop_mode_leaves_ctrl_alone()
     {
-        if (!OnMac) Assert.Ignore("about macOS specifically");
+        if (!OnMac) Assert.Inconclusive("about macOS specifically");
 
         var (view, pty, window) = LiveView(ShortcutMode.Desktop);
 
         Press(view, Key.V, KeyModifiers.Control);
         await Task.Delay(150);
 
-        Assert.That(pty.Written, Is.EqualTo("\u0016"),
-            "Ctrl+V still reaches the program as quoted-insert");
+        pty.Written.Should().Be("\u0016", "Ctrl+V still reaches the program as quoted-insert");
         window.Close();
     }
 
@@ -256,7 +248,7 @@ public class ShortcutModeTests
     [AvaloniaTest]
     public async Task Cmd_a_selects_all_in_terminal_mode_too()
     {
-        if (!OnMac) Assert.Ignore("Cmd+A is a macOS gesture");
+        if (!OnMac) Assert.Inconclusive("Cmd+A is a macOS gesture");
 
         var (view, pty, window) = LiveView(ShortcutMode.Terminal);
         view.Terminal.Write("hello world");
@@ -265,8 +257,7 @@ public class ShortcutModeTests
         Press(view, Key.A, KeyModifiers.Meta);
         await Task.Delay(120);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
-            "the input, not the whole screen");
+        view.Terminal.Selection.GetSelectionText().Should().Be("hello world", "the input, not the whole screen");
         window.Close();
     }
 
@@ -278,9 +269,9 @@ public class ShortcutModeTests
     /// A full-screen application owns its own keys — vim's Ctrl+V is blockwise-visual, not paste — so
     /// Desktop mode stands aside while the alternate screen is up and the chord reaches the program.
     /// </summary>
-    [TestCase(Key.V, "\u0016")]
-    [TestCase(Key.X, "\u0018")]
-    [TestCase(Key.A, "\u0001")]
+    [DataRow(Key.V, "\u0016")]
+    [DataRow(Key.X, "\u0018")]
+    [DataRow(Key.A, "\u0001")]
     [AvaloniaTest]
     public async Task The_alternate_screen_hands_the_keys_back(Key key, string expected)
     {
@@ -289,13 +280,12 @@ public class ShortcutModeTests
 
         EnterAlternateScreen(view);
         await Task.Delay(80);
-        Assert.That(view.Terminal.IsAlternateBufferActive, Is.True, "sanity");
+        view.Terminal.IsAlternateBufferActive.Should().BeTrue("sanity");
 
         Press(view, key, KeyModifiers.Control);
         await Task.Delay(150);
 
-        Assert.That(pty.Written, Is.EqualTo(expected),
-            $"Ctrl+{key} belongs to the full-screen application, not to us");
+        pty.Written.Should().Be(expected, $"Ctrl+{key} belongs to the full-screen application, not to us");
         window.Close();
     }
 
@@ -318,7 +308,7 @@ public class ShortcutModeTests
         await Task.Delay(200);
 
         var clipboard = TopLevel.GetTopLevel(view)?.Clipboard;
-        Assert.That((await clipboard!.TryGetTextAsync())?.Trim(), Does.Contain("selected text"));
+        (await clipboard!.TryGetTextAsync())?.Trim().Should().Contain("selected text");
         window.Close();
     }
 
@@ -333,14 +323,14 @@ public class ShortcutModeTests
         await Task.Delay(60);
         view.Terminal.Write(Esc + "[?1049l");            // back to the normal buffer
         await Task.Delay(80);
-        Assert.That(view.Terminal.IsAlternateBufferActive, Is.False, "sanity");
+        view.Terminal.IsAlternateBufferActive.Should().BeFalse("sanity");
 
         view.Terminal.Write("hello");
         await Task.Delay(60);
         Press(view, Key.A, KeyModifiers.Control);
         await Task.Delay(120);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello"), "Ctrl+A selects again");
+        view.Terminal.Selection.GetSelectionText().Should().Be("hello", "Ctrl+A selects again");
         window.Close();
     }
 
@@ -350,10 +340,10 @@ public class ShortcutModeTests
     /// None hands the whole keyboard to the program. Ctrl+C is plain SIGINT because nothing intercepts it,
     /// and even the terminal's own Ctrl+Shift+C and Ctrl+Shift+V go through untouched.
     /// </summary>
-    [TestCase(Key.C, KeyModifiers.Control, "\u0003")]
-    [TestCase(Key.A, KeyModifiers.Control, "\u0001")]
-    [TestCase(Key.V, KeyModifiers.Control, "\u0016")]
-    [TestCase(Key.X, KeyModifiers.Control, "\u0018")]
+    [DataRow(Key.C, KeyModifiers.Control, "\u0003")]
+    [DataRow(Key.A, KeyModifiers.Control, "\u0001")]
+    [DataRow(Key.V, KeyModifiers.Control, "\u0016")]
+    [DataRow(Key.X, KeyModifiers.Control, "\u0018")]
     [AvaloniaTest]
     public async Task None_sends_every_chord_to_the_program(Key key, KeyModifiers mods, string expected)
     {
@@ -365,7 +355,7 @@ public class ShortcutModeTests
         Press(view, key, mods);
         await Task.Delay(150);
 
-        Assert.That(pty.Written, Is.EqualTo(expected));
+        pty.Written.Should().Be(expected);
         window.Close();
     }
 
@@ -380,7 +370,7 @@ public class ShortcutModeTests
         view.Terminal.Write("hello");
         await Task.Delay(60);
         view.Terminal.Selection.SelectAll();
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity: there is something to copy");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("sanity: there is something to copy");
 
         // The selection is cleared by any keystroke whatever the mode, so it cannot tell a copy from a
         // non-copy. The clipboard can.
@@ -391,15 +381,14 @@ public class ShortcutModeTests
         Press(view, Key.C, KeyModifiers.Control);
         await Task.Delay(150);
 
-        Assert.That(pty.Written, Is.EqualTo("\u0003"), "SIGINT, not a copy");
-        Assert.That(await clipboard.TryGetTextAsync(), Is.EqualTo(sentinel),
-            "and nothing was copied — the clipboard is untouched");
+        pty.Written.Should().Be("\u0003", "SIGINT, not a copy");
+        (await clipboard.TryGetTextAsync()).Should().Be(sentinel, "and nothing was copied — the clipboard is untouched");
         window.Close();
     }
 
     /// <summary>The terminal's own copy and paste chords are not exempt.</summary>
-    [TestCase(Key.C)]
-    [TestCase(Key.V)]
+    [DataRow(Key.C)]
+    [DataRow(Key.V)]
     [AvaloniaTest]
     public async Task None_does_not_keep_the_terminal_chords(Key key)
     {
@@ -411,7 +400,7 @@ public class ShortcutModeTests
         Press(view, key, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(150);
 
-        Assert.That(pty.Written, Is.Not.Empty, $"Ctrl+Shift+{key} reaches the program too");
+        pty.Written.Should().NotBeEmpty($"Ctrl+Shift+{key} reaches the program too");
         window.Close();
     }
 
@@ -419,7 +408,7 @@ public class ShortcutModeTests
     [AvaloniaTest]
     public async Task None_suppresses_the_mac_gestures_too()
     {
-        if (!OnMac) Assert.Ignore("about macOS specifically");
+        if (!OnMac) Assert.Inconclusive("about macOS specifically");
 
         var (view, pty, window) = LiveView(ShortcutMode.None);
         view.Terminal.Write("hello");
@@ -433,8 +422,7 @@ public class ShortcutModeTests
         Press(view, Key.C, KeyModifiers.Meta);
         await Task.Delay(200);
 
-        Assert.That(await clipboard.TryGetTextAsync(), Is.EqualTo(sentinel),
-            "Cmd+C did not copy — the selection being cleared is the generic keystroke behaviour, not a copy");
+        (await clipboard.TryGetTextAsync()).Should().Be(sentinel, "Cmd+C did not copy — the selection being cleared is the generic keystroke behaviour, not a copy");
         window.Close();
     }
 
@@ -448,7 +436,7 @@ public class ShortcutModeTests
     /// is no input on screen to select and the assertion passes for the wrong reason.
     /// </remarks>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Select_all_takes_the_input_not_the_scrollback()
     {
         var (view, window) = await RealShell(ShortcutMode.Desktop);
@@ -466,9 +454,9 @@ public class ShortcutModeTests
             await Task.Delay(400);
 
             var selected = (view.Terminal.Selection.GetSelectionText() ?? "").Trim();
-            Assert.That(selected, Does.Not.Contain("earlier-output"), "not the scrollback");
-            Assert.That(selected, Does.Not.Contain("$"), "not the prompt");
-            Assert.That(selected, Is.EqualTo("my command"), "just what was typed");
+            selected.Should().NotContain("earlier-output", "not the scrollback");
+            selected.Should().NotContain("$", "not the prompt");
+            selected.Should().Be("my command", "just what was typed");
         }
         finally
         {
@@ -479,7 +467,7 @@ public class ShortcutModeTests
 
     /// <summary>Select-all then typing replaces the whole command, as it would in any text field.</summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Select_all_then_typing_replaces_the_command()
     {
         var (view, window) = await RealShell(ShortcutMode.Desktop);
@@ -495,8 +483,7 @@ public class ShortcutModeTests
             TypeText(view, "ok");
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("$ ok"),
-                "the old command went and the new one took its place");
+            CursorRow(view).Should().EndWith("$ ok", "the old command went and the new one took its place");
         }
         finally
         {
@@ -520,7 +507,7 @@ public class ShortcutModeTests
         else Press(view, Key.A, KeyModifiers.Control);
         await Task.Delay(200);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "nothing typed, nothing to select");
+        view.Terminal.Selection.HasSelection.Should().BeFalse("nothing typed, nothing to select");
 
         pushed.Done();
         window.Close();
@@ -532,7 +519,7 @@ public class ShortcutModeTests
     /// can select all does.
     /// </summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Select_all_hides_the_caret()
     {
         var (view, window) = await RealShell(ShortcutMode.Desktop);
@@ -540,14 +527,14 @@ public class ShortcutModeTests
         {
             TypeText(view, "hello world");
             await Task.Delay(700);
-            Assert.That(view.CaretHidden, Is.False, "sanity: the caret is drawn while editing");
+            view.CaretHidden.Should().BeFalse("sanity: the caret is drawn while editing");
 
             if (OnMac) Press(view, Key.A, KeyModifiers.Meta);
             else Press(view, Key.A, KeyModifiers.Control);
             await Task.Delay(400);
 
-            Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity: something is selected");
-            Assert.That(view.CaretHidden, Is.True, "nowhere meaningful to draw it");
+            view.Terminal.Selection.HasSelection.Should().BeTrue("sanity: something is selected");
+            view.CaretHidden.Should().BeTrue("nowhere meaningful to draw it");
         }
         finally
         {
@@ -558,7 +545,7 @@ public class ShortcutModeTests
 
     /// <summary>Steering an edge afterwards makes the caret meaningful again, so it comes back.</summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Steering_an_edge_brings_the_caret_back()
     {
         var (view, window) = await RealShell(ShortcutMode.Desktop);
@@ -570,12 +557,12 @@ public class ShortcutModeTests
             if (OnMac) Press(view, Key.A, KeyModifiers.Meta);
             else Press(view, Key.A, KeyModifiers.Control);
             await Task.Delay(400);
-            Assert.That(view.CaretHidden, Is.True, "sanity");
+            view.CaretHidden.Should().BeTrue("sanity");
 
             Press(view, Key.Right, KeyModifiers.Shift);
             await Task.Delay(300);
 
-            Assert.That(view.CaretHidden, Is.False, "the user is steering an edge again");
+            view.CaretHidden.Should().BeFalse("the user is steering an edge again");
         }
         finally
         {
@@ -586,7 +573,7 @@ public class ShortcutModeTests
 
     /// <summary>And typing over the selection retires it, caret included.</summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Typing_after_select_all_brings_the_caret_back()
     {
         var (view, window) = await RealShell(ShortcutMode.Desktop);
@@ -602,7 +589,7 @@ public class ShortcutModeTests
             TypeText(view, "x");
             await Task.Delay(700);
 
-            Assert.That(view.CaretHidden, Is.False, "the selection is gone, so the caret is back");
+            view.CaretHidden.Should().BeFalse("the selection is gone, so the caret is back");
         }
         finally
         {
@@ -616,7 +603,7 @@ public class ShortcutModeTests
     /// destructive act — and a selection you can no longer see is one you cannot copy again, extend, or
     /// replace.
     /// </summary>
-    [TestCase(Key.C, KeyModifiers.Control | KeyModifiers.Shift)]
+    [DataRow(Key.C, KeyModifiers.Control | KeyModifiers.Shift)]
     [AvaloniaTest]
     public async Task Copy_leaves_the_selection_in_place(Key key, KeyModifiers mods)
     {
@@ -629,12 +616,11 @@ public class ShortcutModeTests
         Press(view, key, mods);
         await Task.Delay(200);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "the selection survives a copy");
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo(before), "and is unchanged");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("the selection survives a copy");
+        view.Terminal.Selection.GetSelectionText().Should().Be(before, "and is unchanged");
 
         var clipboard = TopLevel.GetTopLevel(view)!.Clipboard!;
-        Assert.That((await clipboard.TryGetTextAsync())?.Trim(), Does.Contain("hello world"),
-            "sanity: it really did copy");
+        (await clipboard.TryGetTextAsync())?.Trim().Should().Contain("hello world", "sanity: it really did copy");
         window.Close();
     }
 
@@ -642,7 +628,7 @@ public class ShortcutModeTests
     [AvaloniaTest]
     public async Task Cmd_c_leaves_the_selection_in_place()
     {
-        if (!OnMac) Assert.Ignore("Cmd+C is a macOS gesture");
+        if (!OnMac) Assert.Inconclusive("Cmd+C is a macOS gesture");
 
         var (view, pty, window) = LiveView(ShortcutMode.Terminal);
         view.Terminal.Write("hello world");
@@ -652,7 +638,7 @@ public class ShortcutModeTests
         Press(view, Key.C, KeyModifiers.Meta);
         await Task.Delay(200);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True);
+        view.Terminal.Selection.HasSelection.Should().BeTrue();
         window.Close();
     }
 
@@ -661,7 +647,7 @@ public class ShortcutModeTests
     /// nothing about the caret should either.
     /// </summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Copying_a_select_all_keeps_the_caret_hidden()
     {
         var (view, window) = await RealShell(ShortcutMode.Desktop);
@@ -673,14 +659,14 @@ public class ShortcutModeTests
             if (OnMac) Press(view, Key.A, KeyModifiers.Meta);
             else Press(view, Key.A, KeyModifiers.Control);
             await Task.Delay(400);
-            Assert.That(view.CaretHidden, Is.True, "sanity");
+            view.CaretHidden.Should().BeTrue("sanity");
 
             if (OnMac) Press(view, Key.C, KeyModifiers.Meta);
             else Press(view, Key.C, KeyModifiers.Control | KeyModifiers.Shift);
             await Task.Delay(400);
 
-            Assert.That(view.Terminal.Selection.HasSelection, Is.True, "still selected");
-            Assert.That(view.CaretHidden, Is.True, "so still hidden");
+            view.Terminal.Selection.HasSelection.Should().BeTrue("still selected");
+            view.CaretHidden.Should().BeTrue("so still hidden");
         }
         finally
         {
@@ -706,7 +692,7 @@ public class ShortcutModeTests
 
         // A selection made without the keyboard gesture: no anchor, so nothing is removable.
         view.Terminal.Selection.SelectAll();
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("sanity");
 
         var clipboard = TopLevel.GetTopLevel(view)!.Clipboard!;
         const string sentinel = "untouched";
@@ -714,13 +700,12 @@ public class ShortcutModeTests
 
         var cut = await view.CutAsync();
 
-        Assert.Multiple(async () =>
+        using (new AssertionScope())
         {
-            Assert.That(cut, Is.False, "it says so, rather than claiming a cut it did not make");
-            Assert.That(view.Terminal.Selection.HasSelection, Is.True, "the selection is left standing");
-            Assert.That(await clipboard.TryGetTextAsync(), Is.EqualTo(sentinel),
-                "and the clipboard is not touched — a copy here would look like a cut");
-        });
+            cut.Should().BeFalse("it says so, rather than claiming a cut it did not make");
+            view.Terminal.Selection.HasSelection.Should().BeTrue("the selection is left standing");
+            (await clipboard.TryGetTextAsync()).Should().Be(sentinel, "and the clipboard is not touched — a copy here would look like a cut");
+        }
 
         window.Close();
     }
@@ -741,13 +726,13 @@ public class ShortcutModeTests
         Press(view, Key.X, KeyModifiers.Control);
         await Task.Delay(200);
 
-        Assert.That(pty.Written, Is.EqualTo("\u0018"), "the chord reached the program");
+        pty.Written.Should().Be("\u0018", "the chord reached the program");
         window.Close();
     }
 
     /// <summary>And a cut it CAN make still happens, so the guard has not simply disabled the feature.</summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Cut_still_works_on_an_editable_selection()
     {
         var (view, window) = await RealShell(ShortcutMode.Desktop);
@@ -761,10 +746,10 @@ public class ShortcutModeTests
             Press(view, Key.Left, KeyModifiers.Shift);
             await Task.Delay(300);
 
-            Assert.That(await view.CutAsync(), Is.True, "this one is removable");
+            (await view.CutAsync()).Should().BeTrue("this one is removable");
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("hello wo"));
+            CursorRow(view).Should().EndWith("hello wo");
         }
         finally
         {

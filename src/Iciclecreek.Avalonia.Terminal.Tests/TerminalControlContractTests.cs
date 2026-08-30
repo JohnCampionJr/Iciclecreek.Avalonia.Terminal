@@ -1,5 +1,3 @@
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -10,7 +8,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>Most of the interesting behaviour here is about what happens BEFORE a process exists, which is
 /// exactly the part a consumer meets first and the part no integration test reaches.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalControlContractTests
 {
     /// <summary>
@@ -23,7 +21,7 @@ public class TerminalControlContractTests
     {
         var control = new TerminalControl { Process = "" };
 
-        Assert.ThrowsAsync<InvalidOperationException>(
+        Assert.ThrowsExactlyAsync<InvalidOperationException>(
             async () => await control.LaunchProcess(),
             "a control with no template has no terminal to launch into, and should say so plainly");
     }
@@ -40,16 +38,16 @@ public class TerminalControlContractTests
 
         // The launch itself cannot succeed on an unrealised control — the documented write-through happens
         // first and is what this asserts.
-        Assert.ThrowsAsync<InvalidOperationException>(
+        Assert.ThrowsExactlyAsync<InvalidOperationException>(
             async () => await control.LaunchProcess(dir, "/bin/sh", "-c", "exit 0"));
 
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(control.StartingDirectory, Is.EqualTo(dir), $"observed '{control.StartingDirectory ?? "null"}'");
-            Assert.That(control.Process, Is.EqualTo("/bin/sh"), $"observed '{control.Process}'");
-            Assert.That(control.Args, Is.EqualTo(new[] { "-c", "exit 0" }),
+            control.StartingDirectory.Should().Be(dir, $"observed '{control.StartingDirectory ?? "null"}'");
+            control.Process.Should().Be("/bin/sh", $"observed '{control.Process}'");
+            control.Args.Should().Equal(new[] { "-c", "exit 0" },
                 $"observed [{string.Join(", ", control.Args ?? [])}]");
-        });
+        };
     }
 
     /// <summary>
@@ -70,8 +68,7 @@ public class TerminalControlContractTests
         {
             control.Terminal.Write("]7;file://host/tmp");
 
-            Assert.That(control.CurrentDirectory, Is.EqualTo(control.View().CurrentDirectory),
-                $"the control must surface the view's value, whatever it parsed. "
+            control.CurrentDirectory.Should().Be(control.View().CurrentDirectory, $"the control must surface the view's value, whatever it parsed. "
                 + $"control='{control.CurrentDirectory ?? "null"}' view='{control.View().CurrentDirectory ?? "null"}'");
         }
         finally
@@ -93,8 +90,7 @@ public class TerminalControlContractTests
 
         try
         {
-            Assert.DoesNotThrow(() => control.Kill(),
-                "killing a terminal that never launched is a no-op, not an error");
+            ((Action)(() => control.Kill())).Should().NotThrow("killing a terminal that never launched is a no-op, not an error");
         }
         finally
         {
@@ -114,9 +110,8 @@ public class TerminalControlContractTests
 
         try
         {
-            Assert.That(control.Terminal, Is.Not.Null);
-            Assert.That(control.Terminal.Options, Is.Not.Null,
-                "documented options-backed properties are meaningless without this");
+            control.Terminal.Should().NotBeNull();
+            control.Terminal.Options.Should().NotBeNull("documented options-backed properties are meaningless without this");
         }
         finally
         {

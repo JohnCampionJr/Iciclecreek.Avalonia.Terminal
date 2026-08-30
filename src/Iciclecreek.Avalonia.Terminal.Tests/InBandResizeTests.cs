@@ -1,8 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
-using Avalonia.Headless.NUnit;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -20,7 +18,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// the render scaling holds the grid still, which is exactly the case the host has to notice for
 /// itself.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class InBandResizeTests
 {
     private const string Esc = "";
@@ -69,13 +67,12 @@ public class InBandResizeTests
 
             Rescale(window, view, 2.0);
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(view.Terminal.Cols, Is.EqualTo(cols), "the grid must not have moved");
-                Assert.That(view.Terminal.Rows, Is.EqualTo(rows), "the grid must not have moved");
-                Assert.That(reports, Is.Not.Empty,
-                    "the text area is twice the pixels it was, and the application asked to be told");
-            });
+            using (new AssertionScope())
+        {
+                view.Terminal.Cols.Should().Be(cols, "the grid must not have moved");
+                view.Terminal.Rows.Should().Be(rows, "the grid must not have moved");
+                reports.Should().NotBeEmpty("the text area is twice the pixels it was, and the application asked to be told");
+            };
         }
         finally { window.Close(); }
     }
@@ -93,11 +90,11 @@ public class InBandResizeTests
 
             Rescale(window, view, 2.0);
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(view.Terminal.Options.CellWidthPixels, Is.GreaterThan(width));
-                Assert.That(view.Terminal.Options.CellHeightPixels, Is.GreaterThan(height));
-            });
+            using (new AssertionScope())
+        {
+                view.Terminal.Options.CellWidthPixels.Should().BeGreaterThan(width);
+                view.Terminal.Options.CellHeightPixels.Should().BeGreaterThan(height);
+            };
         }
         finally { window.Close(); }
     }
@@ -124,8 +121,7 @@ public class InBandResizeTests
             }
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(reports, Is.Empty,
-                "nothing about the text area changed, so there was nothing to report");
+            reports.Should().BeEmpty("nothing about the text area changed, so there was nothing to report");
         }
         finally { window.Close(); }
     }
@@ -142,7 +138,7 @@ public class InBandResizeTests
 
             Rescale(window, view, 2.0);
 
-            Assert.That(reports, Is.Empty);
+            reports.Should().BeEmpty();
         }
         finally { window.Close(); }
     }

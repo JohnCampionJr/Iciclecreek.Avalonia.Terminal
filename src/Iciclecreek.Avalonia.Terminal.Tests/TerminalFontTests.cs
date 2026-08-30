@@ -1,6 +1,4 @@
 using Avalonia.Media;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>These assert the DEFAULT only. A host that sets a font, or a parent that passes one down by
 /// inheritance, still wins — the default decides what happens when nobody said anything at all.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalFontTests
 {
     private static bool LooksMonospace(FontFamily family) =>
@@ -34,10 +32,8 @@ public class TerminalFontTests
     {
         var view = new TerminalView();
 
-        Assert.That(view.FontFamily, Is.Not.EqualTo(FontFamily.Default),
-            "FontFamily.Default is the proportional system UI font");
-        Assert.That(LooksMonospace(view.FontFamily), Is.True,
-            $"observed '{view.FontFamily}'");
+        view.FontFamily.Should().NotBe(FontFamily.Default, "FontFamily.Default is the proportional system UI font");
+        LooksMonospace(view.FontFamily).Should().BeTrue($"observed '{view.FontFamily}'");
     }
 
     [AvaloniaTest]
@@ -45,10 +41,8 @@ public class TerminalFontTests
     {
         var control = new TerminalControl();
 
-        Assert.That(control.FontFamily, Is.Not.EqualTo(FontFamily.Default),
-            "FontFamily.Default is the proportional system UI font");
-        Assert.That(LooksMonospace(control.FontFamily), Is.True,
-            $"observed '{control.FontFamily}'");
+        control.FontFamily.Should().NotBe(FontFamily.Default, "FontFamily.Default is the proportional system UI font");
+        LooksMonospace(control.FontFamily).Should().BeTrue($"observed '{control.FontFamily}'");
     }
 
     /// <summary>The case actually observed: a bare TerminalWindow rendering a shell in the UI font.</summary>
@@ -57,10 +51,8 @@ public class TerminalFontTests
     {
         var window = new TerminalWindow { Process = "" };
 
-        Assert.That(window.FontFamily, Is.Not.EqualTo(FontFamily.Default),
-            "a bare TerminalWindow rendered its shell in the proportional UI font");
-        Assert.That(LooksMonospace(window.FontFamily), Is.True,
-            $"observed '{window.FontFamily}'");
+        window.FontFamily.Should().NotBe(FontFamily.Default, "a bare TerminalWindow rendered its shell in the proportional UI font");
+        LooksMonospace(window.FontFamily).Should().BeTrue($"observed '{window.FontFamily}'");
     }
 
     /// <summary>And the monospace default must survive the two hops down to the view that renders.</summary>
@@ -73,8 +65,7 @@ public class TerminalFontTests
         {
             var view = window.Control().View();
 
-            Assert.That(LooksMonospace(view.FontFamily), Is.True,
-                $"the view doing the drawing is the one that matters. Observed '{view.FontFamily}'");
+            LooksMonospace(view.FontFamily).Should().BeTrue($"the view doing the drawing is the one that matters. Observed '{view.FontFamily}'");
         }
         finally
         {
@@ -92,8 +83,7 @@ public class TerminalFontTests
 
         try
         {
-            Assert.That(control.View().FontFamily, Is.EqualTo(chosen),
-                $"observed '{control.View().FontFamily}'");
+            (control.View().FontFamily).Should().Be(chosen, $"observed '{control.View().FontFamily}'");
         }
         finally
         {

@@ -1,8 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Headless.NUnit;
 using Avalonia.VisualTree;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// switches to the alternate buffer as its first action, which hid the scrollbar, which resized the
 /// terminal while the program was drawing its opening frame.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalWidthStabilityTests
 {
     private static ScrollBar ScrollBarOf(TerminalControl control) =>
@@ -34,14 +32,13 @@ public class TerminalWidthStabilityTests
 
         var view = control.View();
         var before = view.Terminal.Cols;
-        Assert.That(before, Is.GreaterThan(1), "sanity: the view was arranged, so there is a width to keep");
+        before.Should().BeGreaterThan(1, "sanity: the view was arranged, so there is a width to keep");
 
         view.Terminal.Write("[?1049h");    // switch to the alternate buffer
         window.UpdateLayout();
 
-        Assert.That(view.Terminal.IsAlternateBufferActive, Is.True, "sanity: the switch took");
-        Assert.That(view.Terminal.Cols, Is.EqualTo(before),
-            "the terminal changed width when the program switched buffers — it was told one number and given another");
+        view.Terminal.IsAlternateBufferActive.Should().BeTrue("sanity: the switch took");
+        view.Terminal.Cols.Should().Be(before, "the terminal changed width when the program switched buffers — it was told one number and given another");
 
         window.Close();
     }
@@ -62,7 +59,7 @@ public class TerminalWidthStabilityTests
         view.Terminal.Write("[?1049l");
         window.UpdateLayout();
 
-        Assert.That(view.Terminal.Cols, Is.EqualTo(before));
+        view.Terminal.Cols.Should().Be(before);
 
         window.Close();
     }
@@ -88,14 +85,14 @@ public class TerminalWidthStabilityTests
         var before = view.Terminal.Cols;
         var barWidth = bar.Bounds.Width;
 
-        Assert.That(barWidth, Is.GreaterThan(0), "sanity: the bar has a column to keep");
+        barWidth.Should().BeGreaterThan(0, "sanity: the bar has a column to keep");
 
         view.Terminal.Write("\u001b[?1049h");
         window.UpdateLayout();
 
-        Assert.That(bar.IsEnabled, Is.False, "nothing to scroll in the alternate buffer");
-        Assert.That(bar.Bounds.Width, Is.EqualTo(barWidth).Within(0.5), "but the column is still its own");
-        Assert.That(view.Terminal.Cols, Is.EqualTo(before), "so the terminal never moved");
+        bar.IsEnabled.Should().BeFalse("nothing to scroll in the alternate buffer");
+        bar.Bounds.Width.Should().BeApproximately(barWidth, 0.5, "but the column is still its own");
+        view.Terminal.Cols.Should().Be(before, "so the terminal never moved");
 
         window.Close();
     }

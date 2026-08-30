@@ -1,7 +1,5 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
-using NUnit.Framework;
 using XTerm.Search;
 
 namespace Iciclecreek.Terminal.Tests;
@@ -10,7 +8,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// The renderer half of scrollback search: highlights as an overlay, navigation that moves the
 /// viewport, and all of it reachable from the host without touching the inner view.
 /// </summary>
-[TestFixture]
+[TestClass]
 public class SearchSurfaceTests
 {
     private static (TerminalView view, Window window) Realised()
@@ -29,9 +27,9 @@ public class SearchSurfaceTests
         {
             view.Terminal.Write("error one\r\nfine\r\nerror two\r\n");
 
-            Assert.That(view.FindInBuffer("error"), Is.EqualTo(2));
-            Assert.That(view.SearchHitCount, Is.EqualTo(2));
-            Assert.That(view.SearchCurrentIndex, Is.EqualTo(-1), "no match chosen until the box steps");
+            view.FindInBuffer("error").Should().Be(2);
+            view.SearchHitCount.Should().Be(2);
+            view.SearchCurrentIndex.Should().Be(-1, "no match chosen until the box steps");
         }
         finally { window.Close(); }
     }
@@ -49,9 +47,8 @@ public class SearchSurfaceTests
             view.FindInBuffer("needle");
             var bottom = view.Terminal.Buffer.ViewportY;
 
-            Assert.That(view.FindNext(), Is.True);
-            Assert.That(view.Terminal.Buffer.ViewportY, Is.LessThan(bottom),
-                        "the viewport should have moved up to show the match");
+            view.FindNext().Should().BeTrue();
+            view.Terminal.Buffer.ViewportY.Should().BeLessThan(bottom, "the viewport should have moved up to show the match");
         }
         finally { window.Close(); }
     }
@@ -62,8 +59,8 @@ public class SearchSurfaceTests
         var (view, window) = Realised();
         try
         {
-            Assert.That(view.FindNext(), Is.False);
-            Assert.That(view.FindPrevious(), Is.False);
+            view.FindNext().Should().BeFalse();
+            view.FindPrevious().Should().BeFalse();
         }
         finally { window.Close(); }
     }
@@ -78,8 +75,8 @@ public class SearchSurfaceTests
             view.FindInBuffer("error");
             view.ClearSearch();
 
-            Assert.That(view.SearchHitCount, Is.Zero);
-            Assert.That(view.SearchCurrentIndex, Is.EqualTo(-1));
+            view.SearchHitCount.Should().Be(0);
+            view.SearchCurrentIndex.Should().Be(-1);
         }
         finally { window.Close(); }
     }
@@ -99,7 +96,7 @@ public class SearchSurfaceTests
             using (var context = group.Open())
                 view.Render(context);
 
-            Assert.That(view.SearchHitCount, Is.EqualTo(3));
+            view.SearchHitCount.Should().Be(3);
         }
         finally { window.Close(); }
     }
@@ -121,8 +118,8 @@ public class SearchSurfaceTests
             window.UpdateLayout();
 
             var view = control.View();
-            Assert.That(view.SearchHighlightBrush, Is.EqualTo(Brushes.HotPink));
-            Assert.That(view.SearchCurrentBrush, Is.EqualTo(Brushes.Lime));
+            view.SearchHighlightBrush.Should().Be(Brushes.HotPink);
+            view.SearchCurrentBrush.Should().Be(Brushes.Lime);
         }
         finally { window.Close(); }
     }
@@ -135,8 +132,7 @@ public class SearchSurfaceTests
         {
             view.Terminal.Write("Error error\r\n");
 
-            Assert.That(view.FindInBuffer("error", new SearchOptions { CaseSensitive = true }),
-                        Is.EqualTo(1));
+            view.FindInBuffer("error", new SearchOptions { CaseSensitive = true }).Should().Be(1);
         }
         finally { window.Close(); }
     }

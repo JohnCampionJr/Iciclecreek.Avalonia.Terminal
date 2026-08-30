@@ -1,8 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
-using NUnit.Framework;
 using XTerm.Graphics;
 
 namespace Iciclecreek.Terminal.Tests;
@@ -17,7 +15,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// every decision this renderer makes: the run list a frame produced -- which is exactly what will be drawn
 /// -- and the source-to-destination arithmetic, which is the part with something to get wrong.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class SixelRenderingTests
 {
     private const string Esc = "\u001b";
@@ -59,11 +57,10 @@ public class SixelRenderingTests
         }
 
         var line = view.Terminal.Buffer.Lines[view.Terminal.Buffer.ViewportY + screenRow];
-        Assert.That(line, Is.Not.Null);
+        line.Should().NotBeNull();
 
         var runs = line!.Cache as List<TerminalView.CachedTextRun>;
-        Assert.That(runs, Is.Not.Null,
-            "the row produced no cached runs, so nothing about what it draws can be asserted");
+        runs.Should().NotBeNull("the row produced no cached runs, so nothing about what it draws can be asserted");
         return runs!;
     }
 
@@ -82,8 +79,8 @@ public class SixelRenderingTests
 
             var runs = ImageRuns(view, 0);
 
-            Assert.That(runs.Count, Is.GreaterThan(0), "the picture would never have been drawn");
-            Assert.That(runs[0].Text, Is.Null, "an image run carries no text");
+            runs.Count.Should().BeGreaterThan(0, "the picture would never have been drawn");
+            runs[0].Text.Should().BeNull("an image run carries no text");
         }
         finally { window.Close(); }
     }
@@ -102,10 +99,10 @@ public class SixelRenderingTests
 
             var runs = ImageRuns(view, 0);
 
-            Assert.That(runs.Count, Is.EqualTo(1), "two adjacent tiles should be one draw, not two");
-            Assert.That(runs[0].CellCount, Is.EqualTo(2));
-            Assert.That(runs[0].Placement!.Value.SrcX, Is.Zero);
-            Assert.That(runs[0].Placement!.Value.SrcY, Is.Zero);
+            runs.Count.Should().Be(1, "two adjacent tiles should be one draw, not two");
+            runs[0].CellCount.Should().Be(2);
+            (runs[0].Placement!.Value.SrcX).Should().Be(0);
+            (runs[0].Placement!.Value.SrcY).Should().Be(0);
         }
         finally { window.Close(); }
     }
@@ -121,9 +118,8 @@ public class SixelRenderingTests
             for (int row = 0; row < 4; row++)
             {
                 var runs = ImageRuns(view, row);
-                Assert.That(runs.Count, Is.EqualTo(1), $"row {row}");
-                Assert.That(runs[0].Placement!.Value.SrcY, Is.EqualTo(row * CellPixelHeight),
-                            $"row {row} drew the wrong strip");
+                runs.Count.Should().Be(1, $"row {row}");
+                (runs[0].Placement!.Value.SrcY).Should().Be(row * CellPixelHeight, $"row {row} drew the wrong strip");
             }
         }
         finally { window.Close(); }
@@ -158,10 +154,8 @@ public class SixelRenderingTests
 
             var runs = RunsForRow(view, 0);
 
-            Assert.That(runs.Any(r => r.IsImage), Is.True, "the picture should be drawn");
-            Assert.That(runs.Where(r => r.Text is not null).Any(r => r.StartX < 2 && r.StartX + r.CellCount > 0),
-                        Is.False,
-                        "the text the picture covered should not be drawn underneath it");
+            runs.Any(r => r.IsImage).Should().BeTrue("the picture should be drawn");
+            runs.Where(r => r.Text is not null).Any(r => r.StartX < 2 && r.StartX + r.CellCount > 0).Should().BeFalse("the text the picture covered should not be drawn underneath it");
         }
         finally { window.Close(); }
     }
@@ -188,19 +182,18 @@ public class SixelRenderingTests
         try
         {
             PlaceImage(view);
-            Assert.That(ImageRuns(view, 0)[0].CellCount, Is.EqualTo(2), "the picture starts two columns wide");
+            (ImageRuns(view, 0)[0].CellCount).Should().Be(2, "the picture starts two columns wide");
 
             view.Terminal.Resize(1, view.Terminal.Rows);
             var narrowed = ImageRuns(view, 0);
-            Assert.That(narrowed.Count, Is.EqualTo(1), "the picture should still be there, only narrower");
-            Assert.That(narrowed[0].CellCount, Is.EqualTo(1), "only one column can be shown");
-            Assert.That(narrowed[0].Placement!.Value.Cols, Is.EqualTo(2),
-                "the run keeps its natural width -- that is what there is to widen back into");
+            narrowed.Count.Should().Be(1, "the picture should still be there, only narrower");
+            narrowed[0].CellCount.Should().Be(1, "only one column can be shown");
+            (narrowed[0].Placement!.Value.Cols).Should().Be(2, "the run keeps its natural width -- that is what there is to widen back into");
 
             view.Terminal.Resize(20, view.Terminal.Rows);
             var widened = ImageRuns(view, 0);
-            Assert.That(widened.Count, Is.EqualTo(1));
-            Assert.That(widened[0].CellCount, Is.EqualTo(2), "the second column should come back");
+            widened.Count.Should().Be(1);
+            widened[0].CellCount.Should().Be(2, "the second column should come back");
         }
         finally { window.Close(); }
     }
@@ -220,9 +213,9 @@ public class SixelRenderingTests
             var runs = RunsForRow(view, 0);
             var images = runs.Where(r => r.Image is not null).ToList();
 
-            Assert.That(images.Count, Is.EqualTo(1));
-            Assert.That(images[0].StartX, Is.EqualTo(2), "the picture was placed after the text");
-            Assert.That(runs.Any(r => r.Text is not null), Is.True, "the text beside it still draws");
+            images.Count.Should().Be(1);
+            images[0].StartX.Should().Be(2, "the picture was placed after the text");
+            runs.Any(r => r.Text is not null).Should().BeTrue("the text beside it still draws");
         }
         finally { window.Close(); }
     }
@@ -241,8 +234,8 @@ public class SixelRenderingTests
 
             var runs = ImageRuns(view, 0);
 
-            Assert.That(runs.Count, Is.EqualTo(2));
-            Assert.That(runs[0].Image, Is.Not.SameAs(runs[1].Image));
+            runs.Count.Should().Be(2);
+            runs[0].Image.Should().NotBeSameAs(runs[1].Image);
         }
         finally { window.Close(); }
     }
@@ -277,12 +270,10 @@ public class SixelRenderingTests
 
             var runs = ImageRuns(view, 0);
 
-            Assert.That(runs.Count, Is.EqualTo(2),
-                "two appearances of one picture were merged into a single strip");
-            Assert.That(runs[0].Image, Is.SameAs(runs[1].Image), "they do share the pixels");
-            Assert.That(runs[0].Placement, Is.Not.SameAs(runs[1].Placement), "but not the placement");
-            Assert.That(runs[1].Placement!.Value.SrcX, Is.Zero,
-                        "the second appearance starts at its own first pixel");
+            runs.Count.Should().Be(2, "two appearances of one picture were merged into a single strip");
+            runs[0].Image.Should().BeSameAs(runs[1].Image, "they do share the pixels");
+            runs[0].Placement.Should().NotBeSameAs(runs[1].Placement, "but not the placement");
+            (runs[1].Placement!.Value.SrcX).Should().Be(0, "the second appearance starts at its own first pixel");
         }
         finally { window.Close(); }
     }
@@ -294,14 +285,14 @@ public class SixelRenderingTests
         try
         {
             PlaceImage(view);
-            Assert.That(ImageRuns(view, 0)[0].CellCount, Is.EqualTo(2));
+            (ImageRuns(view, 0)[0].CellCount).Should().Be(2);
 
             view.Terminal.Write(Esc + "[1;1HX");
 
             var runs = ImageRuns(view, 0);
-            Assert.That(runs.Count, Is.EqualTo(1));
-            Assert.That(runs[0].CellCount, Is.EqualTo(1), "only the untouched tile should be left");
-            Assert.That(runs[0].Placement!.Value.SrcX, Is.EqualTo(1 * CellPixelWidth));
+            runs.Count.Should().Be(1);
+            runs[0].CellCount.Should().Be(1, "only the untouched tile should be left");
+            (runs[0].Placement!.Value.SrcX).Should().Be(1 * CellPixelWidth);
         }
         finally { window.Close(); }
     }
@@ -313,11 +304,11 @@ public class SixelRenderingTests
         try
         {
             PlaceImage(view);
-            Assert.That(ImageRuns(view, 0), Is.Not.Empty);
+            ImageRuns(view, 0).Should().NotBeEmpty();
 
             view.Terminal.Write(Esc + "[2J");
 
-            Assert.That(ImageRuns(view, 0), Is.Empty);
+            ImageRuns(view, 0).Should().BeEmpty();
         }
         finally { window.Close(); }
     }
@@ -337,8 +328,8 @@ public class SixelRenderingTests
             var first = ImageRuns(view, 0);
             var second = ImageRuns(view, 0); // this frame is served from the cache
 
-            Assert.That(second.Count, Is.EqualTo(first.Count));
-            Assert.That(second[0].Image, Is.SameAs(first[0].Image));
+            second.Count.Should().Be(first.Count);
+            second[0].Image.Should().BeSameAs(first[0].Image);
         }
         finally { window.Close(); }
     }
@@ -357,13 +348,13 @@ public class SixelRenderingTests
             view.Terminal.Write(Esc + "[6;1Hstill here");
 
             var group = new DrawingGroup();
-            Assert.DoesNotThrow(() =>
+            ((Action)(() =>
             {
                 using var context = group.Open();
                 view.Render(context);
-            });
+            })).Should().NotThrow();
 
-            Assert.That(group.Children.Count, Is.GreaterThan(0), "the frame was abandoned partway through");
+            group.Children.Count.Should().BeGreaterThan(0, "the frame was abandoned partway through");
         }
         finally { window.Close(); }
     }
@@ -398,11 +389,11 @@ public class SixelRenderingTests
     {
         var image = EvenImage();
 
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 8, 3), 0, 20, 10, 20, 1.0,
-            out var source, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 8, 3), 0, 20, 10, 20, 1.0,
+            out var source, out var destination).Should().BeTrue();
 
-        Assert.That(source, Is.EqualTo(new Rect(0, 0, 8, 3)));
-        Assert.That(destination, Is.EqualTo(new Rect(0, 0, 40, 20)));
+        source.Should().Be(new Rect(0, 0, 8, 3));
+        destination.Should().Be(new Rect(0, 0, 40, 20));
     }
 
     /// <summary>
@@ -414,11 +405,11 @@ public class SixelRenderingTests
     {
         var image = EvenImage();
 
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 3, 8, 3), 20, 20, 10, 20, 1.0,
-            out var source, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 3, 8, 3), 20, 20, 10, 20, 1.0,
+            out var source, out var destination).Should().BeTrue();
 
-        Assert.That(source, Is.EqualTo(new Rect(0, 3, 8, 3)));
-        Assert.That(destination, Is.EqualTo(new Rect(0, 20, 40, 20)));
+        source.Should().Be(new Rect(0, 3, 8, 3));
+        destination.Should().Be(new Rect(0, 20, 40, 20));
     }
 
     [AvaloniaTest]
@@ -426,11 +417,11 @@ public class SixelRenderingTests
     {
         var image = EvenImage();
 
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 5, 2, 4, 0, 4, 3), 0, 20, 10, 20, 1.0,
-            out var source, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 5, 2, 4, 0, 4, 3), 0, 20, 10, 20, 1.0,
+            out var source, out var destination).Should().BeTrue();
 
-        Assert.That(source, Is.EqualTo(new Rect(4, 0, 4, 3)));
-        Assert.That(destination, Is.EqualTo(new Rect(50, 0, 20, 20)));
+        source.Should().Be(new Rect(4, 0, 4, 3));
+        destination.Should().Be(new Rect(50, 0, 20, 20));
     }
 
     /// <summary>
@@ -444,11 +435,11 @@ public class SixelRenderingTests
         var image = EvenImage();
 
         // Four columns wide, but only two of them fit on the line.
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 8, 3, cellCount: 2), 0, 20, 10, 20, 1.0,
-            out var source, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 8, 3, cellCount: 2), 0, 20, 10, 20, 1.0,
+            out var source, out var destination).Should().BeTrue();
 
-        Assert.That(source, Is.EqualTo(new Rect(0, 0, 4, 3)), "half the columns is half the source");
-        Assert.That(destination, Is.EqualTo(new Rect(0, 0, 20, 20)));
+        source.Should().Be(new Rect(0, 0, 4, 3), "half the columns is half the source");
+        destination.Should().Be(new Rect(0, 0, 20, 20));
     }
 
     /// <summary>
@@ -472,13 +463,13 @@ public class SixelRenderingTests
         // Eight pixels tall over three-pixel cells: three rows, the last holding two pixels.
         var image = new TerminalImage(new byte[8 * 8 * 4], 8, 8, CellPixelWidth, CellPixelHeight);
 
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 6, 8, 2), 40, 20, 10, 20, 1.0,
-            out var source, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 6, 8, 2), 40, 20, 10, 20, 1.0,
+            out var source, out var destination).Should().BeTrue();
 
-        Assert.That(source, Is.EqualTo(new Rect(0, 6, 8, 2)));
+        source.Should().Be(new Rect(0, 6, 8, 2));
 
         // Two of the cell's three pixel rows, so two thirds of a twenty-pixel row.
-        Assert.That(destination.Height, Is.EqualTo(13));
+        destination.Height.Should().Be(13);
     }
 
     /// <summary>
@@ -489,10 +480,10 @@ public class SixelRenderingTests
     {
         var image = new TerminalImage(new byte[8 * 8 * 4], 8, 8, CellPixelWidth, CellPixelHeight);
 
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 8, 3), 0, 20, 10, 20, 1.0,
-            out _, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 8, 3), 0, 20, 10, 20, 1.0,
+            out _, out var destination).Should().BeTrue();
 
-        Assert.That(destination.Height, Is.EqualTo(20));
+        destination.Height.Should().Be(20);
     }
 
     /// <summary>
@@ -508,11 +499,11 @@ public class SixelRenderingTests
         // Seven pixels wide over two-pixel cells: three and a half cells, rounded up to four.
         var image = new TerminalImage(new byte[7 * 6 * 4], 7, 6, CellPixelWidth, CellPixelHeight);
 
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 7, 3), 0, 20, 10, 20, 1.0,
-            out _, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 7, 3), 0, 20, 10, 20, 1.0,
+            out _, out var destination).Should().BeTrue();
 
         // Seven pixels over two-pixel cells is three and a half cells of ten pixels each.
-        Assert.That(destination.Width, Is.EqualTo(35));
+        destination.Width.Should().Be(35);
     }
 
     /// <summary>
@@ -532,17 +523,17 @@ public class SixelRenderingTests
             new(1, column: 2, cols: 4, 0, 0, 8, 3, PlacementKind.Sixel),
         };
 
-        Assert.That(CoveredByBackdrop(behind, 2, 6), Is.True, "the columns the picture occupies");
-        Assert.That(CoveredByBackdrop(behind, 4, 5), Is.True, "and any of them on their own");
-        Assert.That(CoveredByBackdrop(behind, 0, 2), Is.False, "but not the ones before it");
-        Assert.That(CoveredByBackdrop(behind, 6, 9), Is.False, "nor the ones after");
+        CoveredByBackdrop(behind, 2, 6).Should().BeTrue("the columns the picture occupies");
+        CoveredByBackdrop(behind, 4, 5).Should().BeTrue("and any of them on their own");
+        CoveredByBackdrop(behind, 0, 2).Should().BeFalse("but not the ones before it");
+        CoveredByBackdrop(behind, 6, 9).Should().BeFalse("nor the ones after");
     }
 
     private static bool CoveredByBackdrop(List<LinePlacement> painted, int start, int end)
     {
         var m = typeof(TerminalView).GetMethod("CoveredByBackdrop",
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(m, Is.Not.Null, "CoveredByBackdrop has been renamed; this test needs updating");
+        m.Should().NotBeNull("CoveredByBackdrop has been renamed; this test needs updating");
         return (bool)m!.Invoke(null, new object[] { painted, start, end })!;
     }
 
@@ -553,12 +544,12 @@ public class SixelRenderingTests
         var image = EvenImage();
 
         // One pixel of a two-pixel cell across, one of a three-pixel cell down: half a cell and a third.
-        Assert.That(TerminalView.TryPlanImageBlit(
+        TerminalView.TryPlanImageBlit(
             Run(image, 0, 4, 0, 0, 8, 3, offsetX: 1, offsetY: 1), 0, 20, 10, 20, 1.0,
-            out _, out var destination), Is.True);
+            out _, out var destination).Should().BeTrue();
 
-        Assert.That(destination.X, Is.EqualTo(5), "half a cell across");
-        Assert.That(destination.Y, Is.EqualTo(Math.Round(20.0 / 3)).Within(1.0), "a third of a row down");
+        destination.X.Should().Be(5, "half a cell across");
+        destination.Y.Should().BeApproximately(Math.Round(20.0 / 3), 1.0, "a third of a row down");
     }
 
     [AvaloniaTest]
@@ -566,14 +557,12 @@ public class SixelRenderingTests
     {
         var image = EvenImage();
 
-        Assert.That(TerminalView.TryPlanImageBlit(
+        TerminalView.TryPlanImageBlit(
             Run(image, 0, 4, 0, 0, 8, 3, offsetY: 1), 0, 20, 10, 20, 1.0,
-            out var source, out var destination), Is.True);
+            out var source, out var destination).Should().BeTrue();
 
-        Assert.That(destination.Bottom, Is.LessThanOrEqualTo(20),
-            "the shifted strip must not paint into the following text row");
-        Assert.That(source.Height, Is.LessThan(3),
-            "the source must be cropped with the destination, not squeezed into it");
+        destination.Bottom.Should().BeLessThanOrEqualTo(20, "the shifted strip must not paint into the following text row");
+        source.Height.Should().BeLessThan(3, "the source must be cropped with the destination, not squeezed into it");
     }
 
     [AvaloniaTest]
@@ -581,8 +570,8 @@ public class SixelRenderingTests
     {
         var image = EvenImage();
 
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 8, 3, cellCount: 0), 0, 20, 10, 20, 1.0,
-            out _, out _), Is.False);
+        TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 0, 8, 3, cellCount: 0), 0, 20, 10, 20, 1.0,
+            out _, out _).Should().BeFalse();
     }
 
     [AvaloniaTest]
@@ -590,7 +579,7 @@ public class SixelRenderingTests
     {
         var run = new TerminalView.CachedTextRun(null, 0, 2, null);
 
-        Assert.That(TerminalView.TryPlanImageBlit(run, 0, 20, 10, 20, 1.0, out _, out _), Is.False);
+        TerminalView.TryPlanImageBlit(run, 0, 20, 10, 20, 1.0, out _, out _).Should().BeFalse();
     }
 
     /// <summary>
@@ -603,12 +592,11 @@ public class SixelRenderingTests
         var image = EvenImage();
 
         // A fractional cell width at 1.5x scaling: unsnapped, these edges land off the device grid.
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 3, 4, 0, 0, 8, 3), 0, 20, 8.35, 20, 1.5,
-            out _, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 3, 4, 0, 0, 8, 3), 0, 20, 8.35, 20, 1.5,
+            out _, out var destination).Should().BeTrue();
 
-        Assert.That(destination.X * 1.5, Is.EqualTo(Math.Round(destination.X * 1.5)).Within(0.0001));
-        Assert.That((destination.X + destination.Width) * 1.5,
-            Is.EqualTo(Math.Round((destination.X + destination.Width) * 1.5)).Within(0.0001));
+        (destination.X * 1.5).Should().BeApproximately(Math.Round(destination.X * 1.5), 0.0001);
+        ((destination.X + destination.Width) * 1.5).Should().BeApproximately(Math.Round((destination.X + destination.Width) * 1.5), 0.0001);
     }
 
     // ---- giving up on images, and how far ----------------------------------------------------------
@@ -620,12 +608,12 @@ public class SixelRenderingTests
     [AvaloniaTest]
     public void A_platform_that_cannot_draw_at_all_is_recognised()
     {
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(TerminalView.IndicatesNoRasterBackend(new NotImplementedException()), Is.True);
-            Assert.That(TerminalView.IndicatesNoRasterBackend(new PlatformNotSupportedException()), Is.True);
-            Assert.That(TerminalView.IndicatesNoRasterBackend(new NotSupportedException()), Is.True);
-        });
+            TerminalView.IndicatesNoRasterBackend(new NotImplementedException()).Should().BeTrue();
+            TerminalView.IndicatesNoRasterBackend(new PlatformNotSupportedException()).Should().BeTrue();
+            TerminalView.IndicatesNoRasterBackend(new NotSupportedException()).Should().BeTrue();
+        };
     }
 
     /// <summary>
@@ -635,13 +623,13 @@ public class SixelRenderingTests
     [AvaloniaTest]
     public void A_failure_in_one_picture_is_not_mistaken_for_the_platform()
     {
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(TerminalView.IndicatesNoRasterBackend(new OutOfMemoryException()), Is.False);
-            Assert.That(TerminalView.IndicatesNoRasterBackend(new ObjectDisposedException("bitmap")), Is.False);
-            Assert.That(TerminalView.IndicatesNoRasterBackend(new ArgumentException()), Is.False);
-            Assert.That(TerminalView.IndicatesNoRasterBackend(new InvalidOperationException()), Is.False);
-        });
+            TerminalView.IndicatesNoRasterBackend(new OutOfMemoryException()).Should().BeFalse();
+            TerminalView.IndicatesNoRasterBackend(new ObjectDisposedException("bitmap")).Should().BeFalse();
+            TerminalView.IndicatesNoRasterBackend(new ArgumentException()).Should().BeFalse();
+            TerminalView.IndicatesNoRasterBackend(new InvalidOperationException()).Should().BeFalse();
+        };
     }
 
     // ---- the pixel upload -------------------------------------------------------------------------
@@ -698,7 +686,7 @@ public class SixelRenderingTests
 
         var copied = CopyThrough(image, image.Stride);
 
-        Assert.That(copied, Is.EqualTo(pixels));
+        copied.Should().Equal(pixels);
     }
 
     /// <summary>
@@ -717,10 +705,10 @@ public class SixelRenderingTests
         {
             var row = copied.Skip(y * padded).Take(image.Stride).ToArray();
             var expected = pixels.Skip(y * image.Stride).Take(image.Stride).ToArray();
-            Assert.That(row, Is.EqualTo(expected), $"row {y} landed in the wrong place");
+            row.Should().Equal(expected, $"row {y} landed in the wrong place");
 
             var gap = copied.Skip(y * padded + image.Stride).Take(8).ToArray();
-            Assert.That(gap, Is.All.EqualTo((byte)0xCD), $"row {y} wrote into the padding");
+            gap.Should().AllBeEquivalentTo((byte)0xCD, $"row {y} wrote into the padding");
         }
     }
 
@@ -731,8 +719,8 @@ public class SixelRenderingTests
 
         using var bitmap = TerminalView.CreateBitmap(image);
 
-        Assert.That(bitmap.PixelSize.Width, Is.EqualTo(image.PixelWidth));
-        Assert.That(bitmap.PixelSize.Height, Is.EqualTo(image.PixelHeight));
+        bitmap.PixelSize.Width.Should().Be(image.PixelWidth);
+        bitmap.PixelSize.Height.Should().Be(image.PixelHeight);
     }
 
     // ---- the numbers the emulator and applications are told ---------------------------------------
@@ -745,12 +733,9 @@ public class SixelRenderingTests
         {
             var scaling = TopLevel.GetTopLevel(view)?.RenderScaling ?? 1.0;
 
-            Assert.That(view.Terminal.Options.CellWidthPixels,
-                Is.EqualTo(Math.Max(1, (int)Math.Round(view.CharWidth * scaling))),
-                "the emulator cannot measure a font, so images are sized against whatever the view tells it");
-            Assert.That(view.Terminal.Options.CellHeightPixels,
-                Is.EqualTo(Math.Max(1, (int)Math.Round(view.CharHeight * scaling))));
-            Assert.That(view.Terminal.Options.CellWidthPixels, Is.GreaterThan(0));
+            view.Terminal.Options.CellWidthPixels.Should().Be(Math.Max(1, (int)Math.Round(view.CharWidth * scaling)), "the emulator cannot measure a font, so images are sized against whatever the view tells it");
+            view.Terminal.Options.CellHeightPixels.Should().Be(Math.Max(1, (int)Math.Round(view.CharHeight * scaling)));
+            view.Terminal.Options.CellWidthPixels.Should().BeGreaterThan(0);
         }
         finally { window.Close(); }
     }
@@ -787,7 +772,7 @@ public class SixelRenderingTests
             var expectedWidth = Math.Max(1, (int)Math.Round(window.CharWidth * scaling));
             var expectedHeight = Math.Max(1, (int)Math.Round(window.CharHeight * scaling));
 
-            Assert.That(reply, Is.EqualTo($"{Esc}[6;{expectedHeight};{expectedWidth}t"));
+            reply.Should().Be($"{Esc}[6;{expectedHeight};{expectedWidth}t");
         }
         finally { window.Close(); }
     }
@@ -808,11 +793,11 @@ public class SixelRenderingTests
             window.Control().View().AttachConnection(pty);
 
             var reply = await AskAsync(window, pty, "[16t");
-            Assert.That(reply, Does.StartWith($"{Esc}[6;"), "no reply to work with");
+            reply.Should().StartWith($"{Esc}[6;", "no reply to work with");
 
             var parts = reply.TrimEnd('t').Split(';');
-            Assert.That(int.Parse(parts[2]), Is.EqualTo(window.Terminal.Options.CellWidthPixels));
-            Assert.That(int.Parse(parts[1]), Is.EqualTo(window.Terminal.Options.CellHeightPixels));
+            int.Parse(parts[2]).Should().Be(window.Terminal.Options.CellWidthPixels);
+            int.Parse(parts[1]).Should().Be(window.Terminal.Options.CellHeightPixels);
         }
         finally { window.Close(); }
     }
@@ -833,16 +818,15 @@ public class SixelRenderingTests
             window.Control().View().AttachConnection(pty);
 
             var reply = await AskAsync(window, pty, "[14t");
-            Assert.That(reply, Does.StartWith($"{Esc}[4;"));
+            reply.Should().StartWith($"{Esc}[4;");
 
             var parts = reply.TrimEnd('t').Split(';');
             var height = int.Parse(parts[1]);
             var width = int.Parse(parts[2]);
 
-            Assert.That(width, Is.GreaterThan(0));
-            Assert.That(height, Is.GreaterThan(0));
-            Assert.That(width, Is.LessThanOrEqualTo((int)Math.Round(window.Width * window.RenderScaling)),
-                "the reported width included chrome that is not part of the text area");
+            width.Should().BeGreaterThan(0);
+            height.Should().BeGreaterThan(0);
+            width.Should().BeLessThanOrEqualTo((int)Math.Round(window.Width * window.RenderScaling), "the reported width included chrome that is not part of the text area");
         }
         finally { window.Close(); }
     }
@@ -885,9 +869,9 @@ public class SixelRenderingTests
             var textAt = runs.FindIndex(r => r.Text is not null
                                              && r.StartX <= 0 && r.StartX + r.CellCount > 0);
 
-            Assert.That(imageAt, Is.GreaterThanOrEqualTo(0), "the background picture was not drawn");
-            Assert.That(textAt, Is.GreaterThanOrEqualTo(0), "the text over the background was not drawn");
-            Assert.That(imageAt, Is.LessThan(textAt), "the text must be drawn after the picture");
+            imageAt.Should().BeGreaterThanOrEqualTo(0, "the background picture was not drawn");
+            textAt.Should().BeGreaterThanOrEqualTo(0, "the text over the background was not drawn");
+            imageAt.Should().BeLessThan(textAt, "the text must be drawn after the picture");
         }
         finally { window.Close(); }
     }
@@ -909,9 +893,8 @@ public class SixelRenderingTests
 
             // The character lands and the picture stays: a Kitty placement is an overlay, and the
             // z-index rather than the buffer decides which of them ends up visible.
-            Assert.That(runs.Any(r => r.Text is not null), Is.True);
-            Assert.That(runs.Any(r => r.IsImage), Is.True,
-                        "typing over a front picture should not have removed it");
+            runs.Any(r => r.Text is not null).Should().BeTrue();
+            runs.Any(r => r.IsImage).Should().BeTrue("typing over a front picture should not have removed it");
         }
         finally { window.Close(); }
     }
@@ -934,9 +917,8 @@ public class SixelRenderingTests
                 .Where(r => r.Text is not null && r.StartX < 2 && r.StartX + r.CellCount > 0)
                 .ToList();
 
-            Assert.That(overPicture, Is.Not.Empty, "no text run was drawn over the picture");
-            Assert.That(overPicture.All(r => r.Background is null), Is.True,
-                        "a text run over a background picture painted a fill and hid it");
+            overPicture.Should().NotBeEmpty("no text run was drawn over the picture");
+            overPicture.All(r => r.Background is null).Should().BeTrue("a text run over a background picture painted a fill and hid it");
         }
         finally { window.Close(); }
     }
@@ -957,13 +939,10 @@ public class SixelRenderingTests
             var overPicture = text.Where(r => r.StartX < 2).ToList();
             var besidePicture = text.Where(r => r.StartX >= 2 && r.StartX < 4).ToList();
 
-            Assert.That(overPicture, Is.Not.Empty);
-            Assert.That(overPicture.All(r => r.Background is null), Is.True,
-                "the explicit cell background must not erase the backdrop");
-            Assert.That(besidePicture, Is.Not.Empty,
-                "coverage must split the same-style text run at the picture edge");
-            Assert.That(besidePicture.All(r => r.Background is not null), Is.True,
-                "columns beside the picture must keep their explicit background");
+            overPicture.Should().NotBeEmpty();
+            overPicture.All(r => r.Background is null).Should().BeTrue("the explicit cell background must not erase the backdrop");
+            besidePicture.Should().NotBeEmpty("coverage must split the same-style text run at the picture edge");
+            besidePicture.All(r => r.Background is not null).Should().BeTrue("columns beside the picture must keep their explicit background");
         }
         finally { window.Close(); }
     }
@@ -989,8 +968,8 @@ public class SixelRenderingTests
 
             // Both characters were emitted, so the builder advanced past the background cells rather
             // than ending the run on the first of them and leaving the column index where it was.
-            Assert.That(covered.Contains(0), Is.True, "column 0 produced no text run");
-            Assert.That(covered.Contains(1), Is.True, "column 1 produced no text run");
+            covered.Contains(0).Should().BeTrue("column 0 produced no text run");
+            covered.Contains(1).Should().BeTrue("column 1 produced no text run");
         }
         finally { window.Close(); }
     }
@@ -1040,19 +1019,18 @@ public class SixelRenderingTests
             PlaceAnimation(view);
 
             var image = ImageAt(view, 0, 0);
-            Assert.That(image, Is.Not.Null);
+            image.Should().NotBeNull();
 
             var first = TerminalView.CreateBitmap(image!);
-            Assert.That(first, Is.Not.Null);
+            first.Should().NotBeNull();
 
-            Assert.That(view.Terminal.AdvanceAnimations(TimeSpan.FromMilliseconds(60)), Is.True);
+            view.Terminal.AdvanceAnimations(TimeSpan.FromMilliseconds(60)).Should().BeTrue();
 
             // The pixels a fresh upload would read must now be the second frame's. Index 1 is the
             // GREEN channel of BGRA: the two frames are red and green, and both have blue at zero,
             // so comparing index 0 would compare a channel neither of them uses.
-            Assert.That(image!.CurrentPixels.Span[1], Is.Not.EqualTo(image.Pixels.Span[1]),
-                        "the current frame did not move off the root");
-            Assert.That(image.FrameSerial, Is.Not.Zero, "the serial did not change with the frame");
+            (image!.CurrentPixels.Span[1]).Should().NotBe(image.Pixels.Span[1], "the current frame did not move off the root");
+            image.FrameSerial.Should().NotBe(0, "the serial did not change with the frame");
         }
         finally { window.Close(); }
     }
@@ -1075,16 +1053,15 @@ public class SixelRenderingTests
             PlaceAnimation(view);
 
             var image = ImageAt(view, 0, 0);
-            Assert.That(image, Is.Not.Null);
+            image.Should().NotBeNull();
 
             var rootUpload = CopyThrough(image!, image!.Stride);
             view.Terminal.AdvanceAnimations(TimeSpan.FromMilliseconds(60));
             var frameUpload = CopyThrough(image, image.Stride);
 
             // Green channel: the frames are red and green, and both leave blue at zero.
-            Assert.That(rootUpload[1], Is.Not.EqualTo(frameUpload[1]),
-                        "the upload read the same pixels before and after the frame changed");
-            Assert.That(frameUpload[1], Is.EqualTo(255), "the second frame is the green one");
+            rootUpload[1].Should().NotBe(frameUpload[1], "the upload read the same pixels before and after the frame changed");
+            frameUpload[1].Should().Be(255, "the second frame is the green one");
         }
         finally { window.Close(); }
     }
@@ -1103,25 +1080,22 @@ public class SixelRenderingTests
             PlaceAnimation(view);
 
             var image = ImageAt(view, 0, 0);
-            Assert.That(image, Is.Not.Null);
+            image.Should().NotBeNull();
 
             var first = view.GetOrCreateBitmap(image!);
-            Assert.That(first, Is.Not.Null);
-            Assert.That(view.GetOrCreateBitmap(image!), Is.SameAs(first),
-                        "an unchanged frame was uploaded twice");
+            first.Should().NotBeNull();
+            view.GetOrCreateBitmap(image!).Should().BeSameAs(first, "an unchanged frame was uploaded twice");
 
             view.Terminal.AdvanceAnimations(TimeSpan.FromMilliseconds(60));
 
             var afterFrame = view.GetOrCreateBitmap(image!);
-            Assert.That(afterFrame, Is.Not.SameAs(first),
-                        "the new frame was not uploaded, so the animation would draw frozen");
+            afterFrame.Should().NotBeSameAs(first, "the new frame was not uploaded, so the animation would draw frozen");
 
             // And the refresh must record which frame it uploaded. Without that the cache is stale
             // on every look, so a running animation re-uploads on each of them -- which draws
             // correctly and costs a full texture upload per frame, the kind of fault that shows up
             // as heat rather than as a wrong pixel.
-            Assert.That(view.GetOrCreateBitmap(image!), Is.SameAs(afterFrame),
-                        "the refreshed upload was not recorded, so it uploads again every frame");
+            view.GetOrCreateBitmap(image!).Should().BeSameAs(afterFrame, "the refreshed upload was not recorded, so it uploads again every frame");
         }
         finally { window.Close(); }
     }
@@ -1135,9 +1109,9 @@ public class SixelRenderingTests
             PlaceImage(view);
 
             var image = ImageAt(view, 0, 0);
-            Assert.That(image, Is.Not.Null);
-            Assert.That(image!.FrameSerial, Is.Zero);
-            Assert.That(image.CurrentPixels.Length, Is.EqualTo(image.Pixels.Length));
+            image.Should().NotBeNull();
+            (image!.FrameSerial).Should().Be(0);
+            image.CurrentPixels.Length.Should().Be(image.Pixels.Length);
         }
         finally { window.Close(); }
     }
@@ -1153,7 +1127,7 @@ public class SixelRenderingTests
         {
             view.Terminal.Write("hello");
 
-            Assert.That(view.Terminal.HasRunningAnimations(), Is.False);
+            view.Terminal.HasRunningAnimations().Should().BeFalse();
         }
         finally { window.Close(); }
     }
@@ -1166,7 +1140,7 @@ public class SixelRenderingTests
         {
             PlaceAnimation(view);
 
-            Assert.That(view.Terminal.HasRunningAnimations(), Is.True);
+            view.Terminal.HasRunningAnimations().Should().BeTrue();
         }
         finally { window.Close(); }
     }
@@ -1211,9 +1185,9 @@ public class SixelRenderingTests
             var backAt = runs.FindIndex(r => r.Placement is { ZIndex: (short)1 });
             var frontAt = runs.FindIndex(r => r.Placement is { ZIndex: (short)5 });
 
-            Assert.That(backAt, Is.GreaterThanOrEqualTo(0), "the covered picture was never drawn");
-            Assert.That(frontAt, Is.GreaterThanOrEqualTo(0), "the front picture was never drawn");
-            Assert.That(backAt, Is.LessThan(frontAt), "the deeper picture must be drawn first");
+            backAt.Should().BeGreaterThanOrEqualTo(0, "the covered picture was never drawn");
+            frontAt.Should().BeGreaterThanOrEqualTo(0, "the front picture was never drawn");
+            backAt.Should().BeLessThan(frontAt, "the deeper picture must be drawn first");
         }
         finally { window.Close(); }
     }
@@ -1246,9 +1220,8 @@ public class SixelRenderingTests
                 .Where(r => r.IsImage && r.Background is not null)
                 .ToList();
 
-            Assert.That(filled.Count, Is.EqualTo(1),
-                        "the cell background belongs to the bottom picture alone");
-            Assert.That(filled[0].Placement!.Value.ZIndex, Is.EqualTo(1));
+            filled.Count.Should().Be(1, "the cell background belongs to the bottom picture alone");
+            (filled[0].Placement!.Value.ZIndex).Should().Be(1);
         }
         finally { window.Close(); }
     }
@@ -1271,11 +1244,9 @@ public class SixelRenderingTests
 
             // One run, not two. The lower picture is the bottom layer of both its cells -- being
             // covered does not change that -- so nothing splits the strip.
-            Assert.That(back.Count, Is.EqualTo(1), "the covered picture should still be one strip");
-            Assert.That(back[0].CellCount, Is.EqualTo(2),
-                        "both of the lower picture's columns should still be drawn");
-            Assert.That(back[0].Placement!.Value.SrcX, Is.Zero,
-                        "the strip should start at the picture's own first pixel");
+            back.Count.Should().Be(1, "the covered picture should still be one strip");
+            back[0].CellCount.Should().Be(2, "both of the lower picture's columns should still be drawn");
+            (back[0].Placement!.Value.SrcX).Should().Be(0, "the strip should start at the picture's own first pixel");
         }
         finally { window.Close(); }
     }
@@ -1295,8 +1266,8 @@ public class SixelRenderingTests
 
             var runs = ImageRuns(view, 0);
 
-            Assert.That(runs.Count, Is.EqualTo(1), "two adjacent tiles should be one draw, not two");
-            Assert.That(runs[0].CellCount, Is.EqualTo(2));
+            runs.Count.Should().Be(1, "two adjacent tiles should be one draw, not two");
+            runs[0].CellCount.Should().Be(2);
         }
         finally { window.Close(); }
     }
@@ -1329,13 +1300,13 @@ public class SixelRenderingTests
         // one row tall -- not the strip's natural size.
         var image = new TerminalImage(new byte[8 * 9 * 4], 8, 9, CellPixelWidth, CellPixelHeight);
 
-        Assert.That(TerminalView.TryPlanImageBlit(
+        TerminalView.TryPlanImageBlit(
                 StretchedRun(image, 0, 2, 0, 3, 8, 3, pxPerCellX: 4f, pxPerCellY: 3f),
                 20, 20, 10, 20, 1.0,
-                out var source, out var destination), Is.True);
+                out var source, out var destination).Should().BeTrue();
 
-        Assert.That(source, Is.EqualTo(new Rect(0, 3, 8, 3)));
-        Assert.That(destination, Is.EqualTo(new Rect(0, 20, 20, 20)));
+        source.Should().Be(new Rect(0, 3, 8, 3));
+        destination.Should().Be(new Rect(0, 20, 20, 20));
     }
 
     /// <summary>
@@ -1351,12 +1322,12 @@ public class SixelRenderingTests
     {
         var image = new TerminalImage(new byte[16 * 299 * 4], 16, 299, CellPixelWidth, CellPixelHeight);
 
-        Assert.That(TerminalView.TryPlanImageBlit(
+        TerminalView.TryPlanImageBlit(
                 StretchedRun(image, 0, 4, 0, 37, 16, 37, pxPerCellX: 4f, pxPerCellY: 37.375f),
                 20, 20, 10, 20, 1.0,
-                out _, out var destination), Is.True);
+                out _, out var destination).Should().BeTrue();
 
-        Assert.That(destination.Height, Is.EqualTo(20), "the strip must meet both of its neighbours");
+        destination.Height.Should().Be(20, "the strip must meet both of its neighbours");
     }
 
     /// <summary>
@@ -1369,12 +1340,11 @@ public class SixelRenderingTests
         var image = EvenImage();
 
         // The last row of a 8x7 span at 3px cells has 1px left: a third of a cell, not a row.
-        Assert.That(TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 6, 8, 1), 40, 20, 10, 20, 1.0,
-            out _, out var destination), Is.True);
+        TerminalView.TryPlanImageBlit(Run(image, 0, 4, 0, 6, 8, 1), 40, 20, 10, 20, 1.0,
+            out _, out var destination).Should().BeTrue();
 
         // A third of a 20px row is 6.67px, snapped to the 7px device-pixel boundary -- the point
         // is that it is nowhere near the full 20 a stretched strip would fill.
-        Assert.That(destination.Height, Is.EqualTo(7.0).Within(0.01),
-            "a partial edge strip keeps its natural height");
+        destination.Height.Should().BeApproximately(7.0, 0.01, "a partial edge strip keeps its natural height");
     }
 }

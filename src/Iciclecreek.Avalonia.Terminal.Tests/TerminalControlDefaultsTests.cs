@@ -1,7 +1,5 @@
 using System.Runtime.InteropServices;
 using Avalonia.Media;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -15,7 +13,7 @@ namespace Iciclecreek.Terminal.Tests;
 ///
 /// <para>Nothing here shows a window, so nothing here needs closing.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalControlDefaultsTests
 {
     private static bool Windows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -34,8 +32,7 @@ public class TerminalControlDefaultsTests
         var control = new TerminalControl();
 
         var expected = Windows ? "cmd.exe" : "bash";
-        Assert.That(control.Process, Is.EqualTo(expected),
-            $"a consumer reads this default from the README before launching anything. Observed '{control.Process}'");
+        control.Process.Should().Be(expected, $"a consumer reads this default from the README before launching anything. Observed '{control.Process}'");
     }
 
     /// <summary>README: Args default "Empty".</summary>
@@ -44,8 +41,7 @@ public class TerminalControlDefaultsTests
     {
         var control = new TerminalControl();
 
-        Assert.That(control.Args, Is.Empty,
-            $"observed {control.Args?.Count.ToString() ?? "null"} argument(s)");
+        control.Args.Should().BeEmpty($"observed {control.Args?.Count.ToString() ?? "null"} argument(s)");
     }
 
     /// <summary>
@@ -61,8 +57,7 @@ public class TerminalControlDefaultsTests
     {
         var control = new TerminalControl();
 
-        Assert.That(control.StartingDirectory, Is.EqualTo(Environment.CurrentDirectory),
-            $"TerminalView and TerminalWindow both default to the current directory; TerminalControl must agree. "
+        control.StartingDirectory.Should().Be(Environment.CurrentDirectory, $"TerminalView and TerminalWindow both default to the current directory; TerminalControl must agree. "
             + $"Observed '{control.StartingDirectory ?? "null"}'");
     }
 
@@ -72,7 +67,7 @@ public class TerminalControlDefaultsTests
     {
         var control = new TerminalControl();
 
-        Assert.That(control.BufferSize, Is.EqualTo(1000), $"observed {control.BufferSize}");
+        control.BufferSize.Should().Be(1000, $"observed {control.BufferSize}");
     }
 
     /// <summary>README: SelectionBrush default "Semi-transparent blue".</summary>
@@ -81,11 +76,9 @@ public class TerminalControlDefaultsTests
     {
         var control = new TerminalControl();
 
-        Assert.That(control.SelectionBrush, Is.TypeOf<SolidColorBrush>(),
-            $"observed {control.SelectionBrush?.GetType().Name ?? "null"}");
+        control.SelectionBrush.Should().BeOfType<SolidColorBrush>($"observed {control.SelectionBrush?.GetType().Name ?? "null"}");
 
         var brush = (SolidColorBrush)control.SelectionBrush!;
-        Assert.That(brush.Color, Is.EqualTo(Color.FromArgb(128, 0, 120, 215)),
-            $"observed {brush.Color}");
+        brush.Color.Should().Be(Color.FromArgb(128, 0, 120, 215), $"observed {brush.Color}");
     }
 }

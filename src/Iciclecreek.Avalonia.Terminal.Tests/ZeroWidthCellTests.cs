@@ -1,6 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -16,7 +14,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>The render path used to assert that a width-0 cell had empty content, which is true of placeholders
 /// and false of these. It fired on ordinary output.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ZeroWidthCellTests
 {
     private static (TerminalView view, Window window) Realised()
@@ -28,10 +26,10 @@ public class ZeroWidthCellTests
     }
 
     /// <summary>Each of these lands in a width-0 cell carrying content when it has no base.</summary>
-    [TestCase("́", "combining acute")]
-    [TestCase("️", "variation selector 16")]
-    [TestCase("⃣", "combining keycap")]
-    [TestCase("‍", "zero width joiner")]
+    [DataRow("́", "combining acute")]
+    [DataRow("️", "variation selector 16")]
+    [DataRow("⃣", "combining keycap")]
+    [DataRow("‍", "zero width joiner")]
     [AvaloniaTest]
     public void A_combining_character_with_no_base_renders_without_complaint(string text, string what)
     {
@@ -41,12 +39,12 @@ public class ZeroWidthCellTests
         window.UpdateLayout();
 
         var cell = view.Terminal.Buffer.Lines[0]![0];
-        Assert.That(cell.Width, Is.EqualTo(0), $"precondition: {what} occupies no column");
-        Assert.That(cell.Content, Is.Not.Empty, $"precondition: and unlike a placeholder, {what} has content");
+        cell.Width.Should().Be(0, $"precondition: {what} occupies no column");
+        cell.Content.Should().NotBeEmpty($"precondition: and unlike a placeholder, {what} has content");
 
         // The assertion that matters is that rendering this does not blow up. Debug.Assert on a width-0
         // cell with content used to fail here, which is what a debugger stopped on.
-        Assert.DoesNotThrow(() => view.InvalidateVisual());
+        ((Action)(() => view.InvalidateVisual())).Should().NotThrow();
 
         window.Close();
     }
@@ -64,10 +62,10 @@ public class ZeroWidthCellTests
         window.UpdateLayout();
 
         var line = view.Terminal.Buffer.Lines[0]!;
-        Assert.That(line[0].Width, Is.EqualTo(2));
-        Assert.That(line[1].Width, Is.EqualTo(0), "the placeholder behind it");
-        Assert.That(line[1].Content, Is.Empty, "which carries nothing, unlike a stranded combining mark");
-        Assert.That(line[2].Content, Is.EqualTo("X"), "and the next character starts past both columns");
+        line[0].Width.Should().Be(2);
+        line[1].Width.Should().Be(0, "the placeholder behind it");
+        line[1].Content.Should().BeEmpty("which carries nothing, unlike a stranded combining mark");
+        line[2].Content.Should().Be("X", "and the next character starts past both columns");
 
         window.Close();
     }

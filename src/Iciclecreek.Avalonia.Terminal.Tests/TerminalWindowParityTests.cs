@@ -1,5 +1,3 @@
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -11,7 +9,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// a consumer following the documentation met a compile error. These lock the parity in so it cannot drift
 /// apart again silently.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalWindowParityTests
 {
     /// <summary>BufferSize must reach the emulator through both hops, not just sit on the window.</summary>
@@ -22,14 +20,12 @@ public class TerminalWindowParityTests
 
         try
         {
-            Assert.Multiple(() =>
-            {
-                Assert.That(window.Control().BufferSize, Is.EqualTo(4096),
-                    $"first hop observed {window.Control().BufferSize}");
-                Assert.That(window.Terminal.Options.Scrollback, Is.EqualTo(4096),
-                    $"a scrollback size that never reaches the emulator is not a scrollback size. "
+            using (new AssertionScope())
+        {
+                (window.Control().BufferSize).Should().Be(4096, $"first hop observed {window.Control().BufferSize}");
+                window.Terminal.Options.Scrollback.Should().Be(4096, $"a scrollback size that never reaches the emulator is not a scrollback size. "
                     + $"Observed {window.Terminal.Options.Scrollback}");
-            });
+            };
         }
         finally
         {
@@ -52,13 +48,12 @@ public class TerminalWindowParityTests
 
         try
         {
-            Assert.Multiple(() =>
-            {
-                Assert.That(window.ShowCaretOnClick, Is.True, "the window dropped its own value");
-                Assert.That(window.Control().ShowCaretOnClick, Is.True, "first hop dropped it");
-                Assert.That(window.Control().View().ShowCaretOnClick, Is.True,
-                    "the view doing the hit-testing is the one that has to know");
-            });
+            using (new AssertionScope())
+        {
+                window.ShowCaretOnClick.Should().BeTrue("the window dropped its own value");
+                (window.Control().ShowCaretOnClick).Should().BeTrue("first hop dropped it");
+                (window.Control().View().ShowCaretOnClick).Should().BeTrue("the view doing the hit-testing is the one that has to know");
+            };
         }
         finally
         {
@@ -75,8 +70,7 @@ public class TerminalWindowParityTests
 
         try
         {
-            Assert.That(control.View().ShowCaretOnClick, Is.True,
-                "set before the template existed, and silently discarded before this was a StyledProperty");
+            (control.View().ShowCaretOnClick).Should().BeTrue("set before the template existed, and silently discarded before this was a StyledProperty");
         }
         finally
         {
@@ -92,8 +86,7 @@ public class TerminalWindowParityTests
 
         try
         {
-            Assert.That(window.Terminal, Is.SameAs(window.Control().Terminal),
-                "two different emulators would mean writes and reads disagreeing about state");
+            window.Terminal.Should().BeSameAs(window.Control().Terminal, "two different emulators would mean writes and reads disagreeing about state");
         }
         finally
         {
@@ -109,8 +102,7 @@ public class TerminalWindowParityTests
 
         try
         {
-            Assert.DoesNotThrow(() => window.Kill(),
-                "killing a terminal that never launched is a no-op, not an error");
+            ((Action)(() => window.Kill())).Should().NotThrow("killing a terminal that never launched is a no-op, not an error");
         }
         finally
         {
@@ -126,11 +118,11 @@ public class TerminalWindowParityTests
 
         try
         {
-            Assert.DoesNotThrow(() =>
+            ((Action)(() =>
             {
                 window.BeginReparent();
                 window.EndReparent();
-            });
+            })).Should().NotThrow();
         }
         finally
         {

@@ -1,8 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>Asserted against the property values that the render path and the emulator actually read, rather
 /// than against the bindings being present — a binding to the wrong property would still be a binding.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ColorBindingTests
 {
     private static readonly IBrush Pink = Brushes.Pink;
@@ -37,8 +35,8 @@ public class ColorBindingTests
         var window = new TerminalWindow { Process = "", Background = Pink, Foreground = Blue }.Realise();
         var view = window.Control().View();
 
-        Assert.That(view.Background, Is.EqualTo(Pink), "Background never arrived at the view");
-        Assert.That(view.Foreground, Is.EqualTo(Blue), "Foreground never arrived at the view");
+        view.Background.Should().Be(Pink, "Background never arrived at the view");
+        view.Foreground.Should().Be(Blue, "Foreground never arrived at the view");
 
         window.Close();
     }
@@ -53,8 +51,8 @@ public class ColorBindingTests
         window.Background = Pink;
         window.Foreground = Blue;
 
-        Assert.That(view.Background, Is.EqualTo(Pink), "a later assignment was dropped — is the binding one-shot?");
-        Assert.That(view.Foreground, Is.EqualTo(Blue));
+        view.Background.Should().Be(Pink, "a later assignment was dropped — is the binding one-shot?");
+        view.Foreground.Should().Be(Blue);
 
         window.Close();
     }
@@ -69,8 +67,8 @@ public class ColorBindingTests
         var window = TerminalHost.Show(control);
 
         var view = control.View();
-        Assert.That(view.Background, Is.EqualTo(Pink));
-        Assert.That(view.Foreground, Is.EqualTo(Blue));
+        view.Background.Should().Be(Pink);
+        view.Foreground.Should().Be(Blue);
 
         window.Close();
     }
@@ -91,11 +89,9 @@ public class ColorBindingTests
         var window = TerminalHost.Show(control);
         var view = control.View();
 
-        Assert.That(view.Terminal.Colors.Background, Is.EqualTo(0xFFFFFF),
-            "the emulator still reports its built-in background, so OSC 11 answers a lie");
-        Assert.That(view.Terminal.Colors.Foreground, Is.EqualTo(0x112233));
-        Assert.That(view.Terminal.Colors.IsLightBackground, Is.True,
-            "a white host must read as light, or every program that asks picks the wrong theme");
+        view.Terminal.Colors.Background.Should().Be(0xFFFFFF, "the emulator still reports its built-in background, so OSC 11 answers a lie");
+        view.Terminal.Colors.Foreground.Should().Be(0x112233);
+        view.Terminal.Colors.IsLightBackground.Should().BeTrue("a white host must read as light, or every program that asks picks the wrong theme");
 
         window.Close();
     }
@@ -110,8 +106,7 @@ public class ColorBindingTests
 
         control.Background = new SolidColorBrush(Color.FromRgb(0x00, 0x80, 0x40));
 
-        Assert.That(view.Terminal.Colors.Background, Is.EqualTo(0x008040),
-            "the palette kept the colour the emulator was built with");
+        view.Terminal.Colors.Background.Should().Be(0x008040, "the palette kept the colour the emulator was built with");
 
         window.Close();
     }
@@ -132,8 +127,7 @@ public class ColorBindingTests
             GradientStops = { new GradientStop(Colors.Red, 0), new GradientStop(Colors.Blue, 1) },
         };
 
-        Assert.That(view.Terminal.Colors.Background, Is.EqualTo(0x000000),
-            "no single colour to report, so the previous one stands");
+        view.Terminal.Colors.Background.Should().Be(0x000000, "no single colour to report, so the previous one stands");
 
         window.Close();
     }

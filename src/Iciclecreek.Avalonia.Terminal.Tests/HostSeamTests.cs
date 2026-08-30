@@ -1,9 +1,7 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
-using NUnit.Framework;
 using XT = global::XTerm;
 
 namespace Iciclecreek.Terminal.Tests;
@@ -19,7 +17,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <see cref="The_seams_survive_being_driven_off_the_UI_thread"/> drives the terminal the way the
 /// control actually does rather than from the headless UI thread.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class HostSeamTests
 {
     private const string Esc = "\u001b";
@@ -81,8 +79,8 @@ public class HostSeamTests
             view.Terminal.Write($"{Esc}]9;Build finished{Bel}");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(seen, Is.Not.Null);
-            Assert.That(seen!.Notification.Text, Is.EqualTo("Build finished"));
+            seen.Should().NotBeNull();
+            (seen!.Notification.Text).Should().Be("Build finished");
         }
         finally { window.Close(); }
     }
@@ -103,7 +101,7 @@ public class HostSeamTests
             control.View().Terminal.Write($"{Esc}]9;hi{Bel}");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(seen, Is.EqualTo(1));
+            seen.Should().Be(1);
         }
         finally { window.Close(); }
     }
@@ -121,9 +119,9 @@ public class HostSeamTests
             view.Terminal.Write($"{Esc}]99;i=b1:p=title;Deploy done{St}");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(seen, Is.Not.Null);
-            Assert.That(seen!.Notification.Title, Is.EqualTo("Deploy done"));
-            Assert.That(seen.Notification.Identifier, Is.EqualTo("b1"));
+            seen.Should().NotBeNull();
+            (seen!.Notification.Title).Should().Be("Deploy done");
+            seen.Notification.Identifier.Should().Be("b1");
         }
         finally { window.Close(); }
     }
@@ -146,7 +144,7 @@ public class HostSeamTests
 
             // "no" reaches the application too: cancelling a pending request is ITS decision,
             // because it owns the dock or taskbar.
-            Assert.That(actions, Is.EqualTo(new[] { "yes", "no" }));
+            actions.Should().Equal(new[] { "yes", "no" });
         }
         finally { window.Close(); }
     }
@@ -163,11 +161,11 @@ public class HostSeamTests
 
             view.Terminal.Write($"{Esc}]22;wait{Bel}");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Cursor, Is.Not.EqualTo(before), "the shape did not take");
+            view.Cursor.Should().NotBe(before, "the shape did not take");
 
             view.Terminal.Write($"{Esc}]22;{Bel}");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Cursor, Is.EqualTo(before), "the reset did not restore the default");
+            view.Cursor.Should().Be(before, "the reset did not restore the default");
         }
         finally { window.Close(); }
     }
@@ -188,11 +186,11 @@ public class HostSeamTests
 
             view.Terminal.Write($"{Esc}]22;wait{Bel}");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Cursor, Is.Not.SameAs(mine), "sanity: the program's shape took");
+            view.Cursor.Should().NotBeSameAs(mine, "sanity: the program's shape took");
 
             view.Terminal.Write($"{Esc}]22;{Bel}");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Cursor, Is.SameAs(mine), "the embedder's own cursor has to come back");
+            view.Cursor.Should().BeSameAs(mine, "the embedder's own cursor has to come back");
         }
         finally { window.Close(); }
     }
@@ -211,11 +209,11 @@ public class HostSeamTests
             var before = view.Cursor;
             view.Terminal.Write($"{Esc}]22;wait{Bel}");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Cursor, Is.Not.EqualTo(before), "sanity: a mapped shape does change the cursor");
+            view.Cursor.Should().NotBe(before, "sanity: a mapped shape does change the cursor");
 
             view.Terminal.Write($"{Esc}]22;zoom-in{Bel}");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(view.Cursor, Is.EqualTo(before));
+            view.Cursor.Should().Be(before);
         }
         finally { window.Close(); }
     }
@@ -233,7 +231,7 @@ public class HostSeamTests
 
             var clipboard = TopLevel.GetTopLevel(view)!.Clipboard!;
             var text = clipboard.TryGetTextAsync().GetAwaiter().GetResult();
-            Assert.That(text, Is.EqualTo("from the program"));
+            text.Should().Be("from the program");
         }
         finally { window.Close(); }
     }
@@ -254,7 +252,7 @@ public class HostSeamTests
             view.Terminal.Write($"{Esc}]52;c;!!not base64!!{Bel}");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(clipboard.TryGetTextAsync().GetAwaiter().GetResult(), Is.Null.Or.Empty);
+            clipboard.TryGetTextAsync().GetAwaiter().GetResult().Should().BeNullOrEmpty();
         }
         finally { window.Close(); }
     }
@@ -274,7 +272,7 @@ public class HostSeamTests
             Dispatcher.UIThread.RunJobs();
 
             var clipboard = TopLevel.GetTopLevel(view)!.Clipboard!;
-            Assert.That(clipboard.TryGetTextAsync().GetAwaiter().GetResult(), Is.EqualTo("the text"));
+            clipboard.TryGetTextAsync().GetAwaiter().GetResult().Should().Be("the text");
         }
         finally { window.Close(); }
     }
@@ -295,7 +293,7 @@ public class HostSeamTests
             view.Terminal.Write(KittyWrite(("text/html", ""), ("text/plain", "hello")));
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(clipboard.TryGetTextAsync().GetAwaiter().GetResult(), Is.EqualTo("hello"));
+            clipboard.TryGetTextAsync().GetAwaiter().GetResult().Should().Be("hello");
         }
         finally { window.Close(); }
     }
@@ -317,7 +315,7 @@ public class HostSeamTests
             view.Terminal.Write($"{Esc}]52;p;{B64("a drag-selection")}{Bel}");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(clipboard.TryGetTextAsync().GetAwaiter().GetResult(), Is.EqualTo("the user's copy"));
+            clipboard.TryGetTextAsync().GetAwaiter().GetResult().Should().Be("the user's copy");
         }
         finally { window.Close(); }
     }
@@ -338,7 +336,7 @@ public class HostSeamTests
             view.Terminal.Write($"{Esc}]52;c;?{Bel}");
             Dispatcher.UIThread.RunJobs();   // let the deferred clipboard fetch complete
 
-            Assert.That(responses, Does.Contain($"{Esc}]52;c;{B64("host secret")}{Bel}"));
+            responses.Should().Contain($"{Esc}]52;c;{B64("host secret")}{Bel}");
         }
         finally { window.Close(); }
     }
@@ -355,7 +353,7 @@ public class HostSeamTests
             view.Terminal.Write($"{Esc}]52;c;?{Bel}");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(responses, Is.Empty);
+            responses.Should().BeEmpty();
         }
         finally { window.Close(); }
     }
@@ -378,23 +376,20 @@ public class HostSeamTests
 
             view.Terminal.Write("echo hello world");
             view.Terminal.Write($"{Esc}[?5522h");
-            Assert.That(view.Terminal.PasteNotificationMode, Is.True, "sanity: the application announced");
+            view.Terminal.PasteNotificationMode.Should().BeTrue("sanity: the application announced");
 
             for (var i = 0; i < 5; i++)
                 Press(view, Key.Left, KeyModifiers.Shift);
             await Task.Delay(120);
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+            view.Terminal.Selection.GetSelectionText().Should().Be("world", "sanity");
 
             var backspace = view.Terminal.GenerateKeyInput(XT.Input.Key.Backspace, XT.Input.KeyModifiers.None);
             await view.PasteAsync();
             var written = await PtyWaits.AwaitOutput(pty);
 
-            Assert.That(view.Terminal.Selection.HasSelection, Is.False,
-                "the selection has to go, or the replaced text stays highlighted over the new one");
-            Assert.That(written, Does.StartWith(string.Concat(Enumerable.Repeat(backspace, 5))),
-                "the deletion reaches the shell BEFORE the announce, so the insertion lands where the selection was");
-            Assert.That(written, Does.Contain("5522;type=read:status=OK"),
-                "and the paste is still announced rather than typed");
+            view.Terminal.Selection.HasSelection.Should().BeFalse("the selection has to go, or the replaced text stays highlighted over the new one");
+            written.Should().StartWith(string.Concat(Enumerable.Repeat(backspace, 5)), "the deletion reaches the shell BEFORE the announce, so the insertion lands where the selection was");
+            written.Should().Contain("5522;type=read:status=OK", "and the paste is still announced rather than typed");
         }
         finally { window.Close(); }
     }
@@ -420,8 +415,7 @@ public class HostSeamTests
         writer.Start();
         writer.Join();
 
-        Assert.That(thrown, Is.Null,
-            "a seam threw on the reader thread; the read loop's catch-all would have ended the loop "
+        thrown.Should().BeNull("a seam threw on the reader thread; the read loop's catch-all would have ended the loop "
             + "and the terminal would show no further output for the rest of its life");
     }
 
@@ -451,13 +445,11 @@ public class HostSeamTests
 
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(onUiThread, Is.EqualTo(new[] { true, true }),
-                "the application's handlers run on the UI thread, which is the whole point of the events");
-            Assert.That(view.Cursor, Is.Not.EqualTo(before), "the pointer shape still took effect");
+            onUiThread.Should().Equal(new[] { true, true }, "the application's handlers run on the UI thread, which is the whole point of the events");
+            view.Cursor.Should().NotBe(before, "the pointer shape still took effect");
 
             var clipboard = TopLevel.GetTopLevel(view)!.Clipboard!;
-            Assert.That(clipboard.TryGetTextAsync().GetAwaiter().GetResult(), Is.EqualTo("off-thread copy"),
-                "the set path is thread-affine on Windows; off-thread it failed into a discarded task");
+            clipboard.TryGetTextAsync().GetAwaiter().GetResult().Should().Be("off-thread copy", "the set path is thread-affine on Windows; off-thread it failed into a discarded task");
         }
         finally { window.Close(); }
     }
@@ -477,8 +469,8 @@ public class HostSeamTests
             var args = new XTerm.Events.TerminalEvents.ClipboardReadEventArgs("c", "text/html");
             RaiseClipboardRead(view, args);
 
-            Assert.That(args.Deferred, Is.False, "nothing should have been promised");
-            Assert.That(args.Text, Is.Null, "and nothing answered");
+            args.Deferred.Should().BeFalse("nothing should have been promised");
+            args.Text.Should().BeNull("and nothing answered");
         }
         finally { window.Close(); }
     }
@@ -494,7 +486,7 @@ public class HostSeamTests
                 var args = new XTerm.Events.TerminalEvents.ClipboardReadEventArgs("c", mime);
                 RaiseClipboardRead(view, args);
 
-                Assert.That(args.Deferred, Is.True, $"'{mime}' is a mime this host can answer");
+                args.Deferred.Should().BeTrue($"'{mime}' is a mime this host can answer");
             }
         }
         finally { window.Close(); }
@@ -512,8 +504,8 @@ public class HostSeamTests
             var args = new XTerm.Events.TerminalEvents.ClipboardReadEventArgs("c", ".");
             RaiseClipboardRead(view, args);
 
-            Assert.That(args.Text, Is.EqualTo("text/plain"));
-            Assert.That(args.Deferred, Is.False, "the answer does not depend on the clipboard");
+            args.Text.Should().Be("text/plain");
+            args.Deferred.Should().BeFalse("the answer does not depend on the clipboard");
         }
         finally { window.Close(); }
     }
@@ -528,7 +520,7 @@ public class HostSeamTests
             var args = new XTerm.Events.TerminalEvents.ClipboardReadEventArgs("p", "text/plain");
             RaiseClipboardRead(view, args);
 
-            Assert.That(args.Deferred, Is.False, "there is no primary selection to read");
+            args.Deferred.Should().BeFalse("there is no primary selection to read");
         }
         finally { window.Close(); }
     }
@@ -562,7 +554,7 @@ public class HostSeamTests
                 Thread.Sleep(10);
             }
 
-            Assert.That(held, Is.EqualTo("second"));
+            held.Should().Be("second");
         }
         finally { window.Close(); }
     }
@@ -580,7 +572,7 @@ public class HostSeamTests
     {
         var m = typeof(TerminalView).GetMethod("OnTerminalClipboardReadRequested",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(m, Is.Not.Null, "OnTerminalClipboardReadRequested has been renamed; update this test");
+        m.Should().NotBeNull("OnTerminalClipboardReadRequested has been renamed; update this test");
         m!.Invoke(view, new object?[] { null, args });
         Dispatcher.UIThread.RunJobs();
     }
@@ -616,11 +608,11 @@ public class HostSeamTests
 
             lock (responses)
             {
-                Assert.That(responses, Does.Contain($"{Esc}]52;c;{B64("host secret")}{Bel}"));
+                responses.Should().Contain($"{Esc}]52;c;{B64("host secret")}{Bel}");
                 // Respond is what raises DataReceived, so this is where the answer was emitted from.
                 // The headless clipboard has no thread affinity, so the Windows decline cannot be
                 // reproduced here — the thread the answer lands on can, and it is the contract.
-                Assert.That(answeredOnUiThread, Is.All.True,
+                answeredOnUiThread.Should().OnlyContain(x => x,
                     "Respond has to be called from the thread the terminal is driven on");
             }
         }

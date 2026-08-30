@@ -1,13 +1,12 @@
 using Avalonia.Controls;
 using Avalonia.VisualTree;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
 /// <summary>
 /// The three things every contract test needs, and deliberately nothing else.
 ///
-/// <para>There is no fixture base class and no [SetUp]/[TearDown] here on purpose. Under
+/// <para>There is no fixture base class and no [TestInitialize]/[TestCleanup] here on purpose. Under
 /// <c>AvaloniaTestIsolationLevel.PerAssembly</c> each test is personally responsible for closing what it
 /// opens, and hiding the Show/Close pairing behind a base class is how that responsibility gets forgotten.
 /// NUnit's setup hooks are also not guaranteed to run on the headless UI thread that <c>[AvaloniaTest]</c>
@@ -65,8 +64,7 @@ internal static class TerminalHost
     {
         var view = control.GetVisualDescendants().OfType<TerminalView>().FirstOrDefault();
 
-        Assert.That(view, Is.Not.Null,
-            "the template did not realise PART_TerminalView, so every assertion below would be vacuous. "
+        view.Should().NotBeNull("the template did not realise PART_TerminalView, so every assertion below would be vacuous. "
             + "Was the control hosted in a window and shown?");
 
         return view!;
@@ -83,8 +81,7 @@ internal static class TerminalHost
     {
         var control = window.Content as TerminalControl;
 
-        Assert.That(control, Is.Not.Null,
-            "TerminalWindow did not build its inner TerminalControl. Was the window shown?");
+        control.Should().NotBeNull("TerminalWindow did not build its inner TerminalControl. Was the window shown?");
 
         return control!;
     }

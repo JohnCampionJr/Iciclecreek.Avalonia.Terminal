@@ -1,5 +1,3 @@
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -31,7 +29,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// would otherwise inherit rather than replacing it, so a caller setting one variable does not silently lose
 /// <c>PATH</c>. Had it replaced, this property would need a much louder warning than it has.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class PtyOptionsTests
 {
     // ---- VerbatimCommandLine ---------------------------------------------------------------------
@@ -41,8 +39,7 @@ public class PtyOptionsTests
     {
         var view = new TerminalView();
 
-        Assert.That(view.VerbatimCommandLine, Is.False,
-            "every consumer that predates this property relies on arguments arriving as written");
+        view.VerbatimCommandLine.Should().BeFalse("every consumer that predates this property relies on arguments arriving as written");
     }
 
     [AvaloniaTest]
@@ -50,7 +47,7 @@ public class PtyOptionsTests
     {
         var control = new TerminalControl();
 
-        Assert.That(control.VerbatimCommandLine, Is.False, $"observed {control.VerbatimCommandLine}");
+        control.VerbatimCommandLine.Should().BeFalse($"observed {control.VerbatimCommandLine}");
     }
 
     [AvaloniaTest]
@@ -58,7 +55,7 @@ public class PtyOptionsTests
     {
         var window = new TerminalWindow { Process = "" };
 
-        Assert.That(window.VerbatimCommandLine, Is.False, $"observed {window.VerbatimCommandLine}");
+        window.VerbatimCommandLine.Should().BeFalse($"observed {window.VerbatimCommandLine}");
     }
 
     /// <summary>
@@ -73,8 +70,7 @@ public class PtyOptionsTests
 
         try
         {
-            Assert.That(control.View().VerbatimCommandLine, Is.True,
-                $"observed {control.View().VerbatimCommandLine}");
+            (control.View().VerbatimCommandLine).Should().BeTrue($"observed {control.View().VerbatimCommandLine}");
         }
         finally
         {
@@ -90,13 +86,11 @@ public class PtyOptionsTests
 
         try
         {
-            Assert.Multiple(() =>
-            {
-                Assert.That(window.Control().VerbatimCommandLine, Is.True,
-                    $"first hop observed {window.Control().VerbatimCommandLine}");
-                Assert.That(window.Control().View().VerbatimCommandLine, Is.True,
-                    $"second hop observed {window.Control().View().VerbatimCommandLine}");
-            });
+            using (new AssertionScope())
+        {
+                (window.Control().VerbatimCommandLine).Should().BeTrue($"first hop observed {window.Control().VerbatimCommandLine}");
+                (window.Control().View().VerbatimCommandLine).Should().BeTrue($"second hop observed {window.Control().View().VerbatimCommandLine}");
+            };
         }
         finally
         {
@@ -113,12 +107,12 @@ public class PtyOptionsTests
     [AvaloniaTest]
     public void Environment_variables_are_null_by_default()
     {
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(new TerminalView().EnvironmentVariables, Is.Null, "view");
-            Assert.That(new TerminalControl().EnvironmentVariables, Is.Null, "control");
-            Assert.That(new TerminalWindow { Process = "" }.EnvironmentVariables, Is.Null, "window");
-        });
+            (new TerminalView().EnvironmentVariables).Should().BeNull("view");
+            (new TerminalControl().EnvironmentVariables).Should().BeNull("control");
+            (new TerminalWindow { Process = "" }.EnvironmentVariables).Should().BeNull("window");
+        };
     }
 
     [AvaloniaTest]
@@ -130,8 +124,7 @@ public class PtyOptionsTests
 
         try
         {
-            Assert.That(control.View().EnvironmentVariables, Is.SameAs(env),
-                "the dictionary itself should reach the view, not a copy — a caller may still be holding it");
+            (control.View().EnvironmentVariables).Should().BeSameAs(env, "the dictionary itself should reach the view, not a copy — a caller may still be holding it");
         }
         finally
         {
@@ -147,11 +140,11 @@ public class PtyOptionsTests
 
         try
         {
-            Assert.Multiple(() =>
-            {
-                Assert.That(window.Control().EnvironmentVariables, Is.SameAs(env), "first hop");
-                Assert.That(window.Control().View().EnvironmentVariables, Is.SameAs(env), "second hop");
-            });
+            using (new AssertionScope())
+        {
+                (window.Control().EnvironmentVariables).Should().BeSameAs(env, "first hop");
+                (window.Control().View().EnvironmentVariables).Should().BeSameAs(env, "second hop");
+            };
         }
         finally
         {

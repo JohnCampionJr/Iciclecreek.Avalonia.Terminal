@@ -1,10 +1,8 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Iciclecreek.Avalonia.Terminal;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// invisible on a fresh terminal, because before anything scrolls every one of these frames of
 /// reference agrees.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class RendererViewportTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -39,8 +37,7 @@ public class RendererViewportTests
             view.Terminal.Write($"filler {i}\r\n");
         Dispatcher.UIThread.RunJobs();
 
-        Assert.That(view.Terminal.Buffer.ViewportY, Is.GreaterThan(0),
-            "the whole point is that the viewport is no longer at buffer row 0");
+        view.Terminal.Buffer.ViewportY.Should().BeGreaterThan(0, "the whole point is that the viewport is no longer at buffer row 0");
     }
 
     // ------------------------------------------------------------ blinking
@@ -63,15 +60,14 @@ public class RendererViewportTests
 
             var row = view.Terminal.Buffer.ViewportY + view.Terminal.Buffer.Y;
             var line = view.Terminal.Buffer.GetLine(row);
-            Assert.That(line, Is.Not.Null);
+            line.Should().NotBeNull();
 
             // Something has to be IN the cache before dropping it can be observed.
             line!.Cache = new object();
             view.Focus();
             Tick(view);
 
-            Assert.That(line.Cache, Is.Null,
-                "the visible blinking line must have its cached run dropped, or it never repaints");
+            line.Cache.Should().BeNull("the visible blinking line must have its cached run dropped, or it never repaints");
         }
         finally { window.Close(); }
     }
@@ -85,7 +81,7 @@ public class RendererViewportTests
     {
         var tick = typeof(TerminalView).GetMethod("OnCursorBlinkTick",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(tick, Is.Not.Null, "OnCursorBlinkTick has been renamed; this test needs updating");
+        tick.Should().NotBeNull("OnCursorBlinkTick has been renamed; this test needs updating");
         tick!.Invoke(view, new object?[] { null, EventArgs.Empty });
     }
 
@@ -100,11 +96,10 @@ public class RendererViewportTests
         try
         {
             var cell = CellAfter(view, $"{Esc}[8mhunter2");
-            Assert.That(cell.Attributes.IsInvisible(), Is.True,
-                "sanity: the emulator recorded the attribute, which was never the missing half");
+            cell.Attributes.IsInvisible().Should().BeTrue("sanity: the emulator recorded the attribute, which was never the missing half");
 
             var concealed = cell.ApplyConceal(Brushes.Red);
-            Assert.That(((ISolidColorBrush)concealed).Color.A, Is.EqualTo(0));
+            (((ISolidColorBrush)concealed).Color.A).Should().Be(0);
         }
         finally { window.Close(); }
     }
@@ -117,7 +112,7 @@ public class RendererViewportTests
         {
             var cell = CellAfter(view, "hunter2");
 
-            Assert.That(cell.ApplyConceal(Brushes.Red), Is.SameAs(Brushes.Red));
+            cell.ApplyConceal(Brushes.Red).Should().BeSameAs(Brushes.Red);
         }
         finally { window.Close(); }
     }
@@ -133,8 +128,8 @@ public class RendererViewportTests
         try
         {
             var cell = CellAfter(view, $"{Esc}[7;8mhunter2");
-            Assert.That(cell.Attributes.IsInverse(), Is.True, "sanity: both attributes are set");
-            Assert.That(cell.Attributes.IsInvisible(), Is.True);
+            cell.Attributes.IsInverse().Should().BeTrue("sanity: both attributes are set");
+            cell.Attributes.IsInvisible().Should().BeTrue();
 
             // What the renderer does: resolve, swap, then conceal.
             var palette = view.Terminal.Colors.Take();
@@ -144,10 +139,8 @@ public class RendererViewportTests
 
             foreground = cell.ApplyConceal(foreground);
 
-            Assert.That(((ISolidColorBrush)foreground).Color.A, Is.EqualTo(0),
-                "the glyph is what disappears");
-            Assert.That(((ISolidColorBrush)background).Color.A, Is.Not.EqualTo(0),
-                "and the fill behind it is still painted");
+            (((ISolidColorBrush)foreground).Color.A).Should().Be(0, "the glyph is what disappears");
+            (((ISolidColorBrush)background).Color.A).Should().NotBe(0, "and the fill behind it is still painted");
         }
         finally { window.Close(); }
     }
@@ -164,8 +157,7 @@ public class RendererViewportTests
         // appearing without the call.
         var source = System.IO.File.ReadAllText(SourcePath("TerminalView.cs"));
 
-        Assert.That(Occurrences(source, "ApplyConceal(foreground)"), Is.EqualTo(3),
-            "every path that shapes a cell's text must conceal it; add the call, then update this count");
+        Occurrences(source, "ApplyConceal(foreground)").Should().Be(3, "every path that shapes a cell's text must conceal it; add the call, then update this count");
     }
 
     private static int Occurrences(string haystack, string needle)
@@ -184,9 +176,9 @@ public class RendererViewportTests
         while (dir != null && !System.IO.Directory.Exists(System.IO.Path.Combine(dir.FullName, "src")))
             dir = dir.Parent;
 
-        Assert.That(dir, Is.Not.Null, "could not find the repo root from " + AppContext.BaseDirectory);
+        dir.Should().NotBeNull("could not find the repo root from " + AppContext.BaseDirectory);
         var path = System.IO.Path.Combine(dir!.FullName, "src", "Iciclecreek.Avalonia.TerminalWindow", file);
-        Assert.That(System.IO.File.Exists(path), Is.True, "not where this test expected: " + path);
+        System.IO.File.Exists(path).Should().BeTrue("not where this test expected: " + path);
         return path;
     }
 
@@ -195,7 +187,7 @@ public class RendererViewportTests
         view.Terminal.Write(write);
         Dispatcher.UIThread.RunJobs();
         var line = view.Terminal.Buffer.GetLine(view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y);
-        Assert.That(line, Is.Not.Null);
+        line.Should().NotBeNull();
         return line![0];
     }
 
@@ -212,8 +204,8 @@ public class RendererViewportTests
             Dispatcher.UIThread.RunJobs();
 
             var line = view.Terminal.Buffer.GetLine(view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y);
-            Assert.That(line!.TranslateToString(true), Does.StartWith("hunter2"));
-            Assert.That(view.Terminal.Buffer.X, Is.EqualTo(7), "and the cursor advanced over them");
+            (line!.TranslateToString(true)).Should().StartWith("hunter2");
+            view.Terminal.Buffer.X.Should().Be(7, "and the cursor advanced over them");
         }
         finally { window.Close(); }
     }
@@ -229,7 +221,7 @@ public class RendererViewportTests
         var (view, window) = Realised();
         try
         {
-            Assert.That(Row(view, -500), Is.EqualTo(0));
+            Row(view, -500).Should().Be(0);
         }
         finally { window.Close(); }
     }
@@ -240,7 +232,7 @@ public class RendererViewportTests
         var (view, window) = Realised();
         try
         {
-            Assert.That(Row(view, 100_000), Is.EqualTo(view.Terminal.Rows - 1));
+            Row(view, 100_000).Should().Be(view.Terminal.Rows - 1);
         }
         finally { window.Close(); }
     }
@@ -253,7 +245,7 @@ public class RendererViewportTests
         var (view, window) = Realised();
         try
         {
-            Assert.That(Column(view, 100_000), Is.EqualTo(view.Terminal.Cols - 1));
+            Column(view, 100_000).Should().Be(view.Terminal.Cols - 1);
         }
         finally { window.Close(); }
     }
@@ -265,10 +257,9 @@ public class RendererViewportTests
         var (view, window) = Realised();
         try
         {
-            Assert.That(Row(view, 0), Is.EqualTo(0));
-            Assert.That(Column(view, 0), Is.EqualTo(0));
-            Assert.That(Row(view, 100_000), Is.Not.EqualTo(Row(view, 0)),
-                "sanity: the two ends are still distinguishable");
+            Row(view, 0).Should().Be(0);
+            Column(view, 0).Should().Be(0);
+            Row(view, 100_000).Should().NotBe(Row(view, 0), "sanity: the two ends are still distinguishable");
         }
         finally { window.Close(); }
     }
@@ -280,7 +271,7 @@ public class RendererViewportTests
     {
         var m = typeof(TerminalView).GetMethod(name,
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(m, Is.Not.Null, $"{name} has been renamed; this test needs updating");
+        m.Should().NotBeNull($"{name} has been renamed; this test needs updating");
         return (T)m!.Invoke(view, new object[] { arg })!;
     }
 }

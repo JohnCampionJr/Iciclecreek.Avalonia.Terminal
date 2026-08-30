@@ -1,8 +1,6 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -15,7 +13,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// of these were measured rather than reasoned about: 0.9 MB of output pinning 86 MB of live heap,
 /// and a shell profile's sixteen colour sequences each walking the whole scrollback.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class RenderCostTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -34,7 +32,7 @@ public class RenderCostTests
     {
         var f = typeof(TerminalView).GetField(name,
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(f, Is.Not.Null, $"{name} has been renamed; this test needs updating");
+        f.Should().NotBeNull($"{name} has been renamed; this test needs updating");
         return (T)f!.GetValue(view)!;
     }
 
@@ -56,11 +54,10 @@ public class RenderCostTests
             var waiting = Field<List<Action>>(view, "_pendingHostCallbacks");
             lock (waiting)
             {
-                Assert.That(waiting.Count, Is.EqualTo(50), "sanity: every notification is queued");
+                waiting.Count.Should().Be(50, "sanity: every notification is queued");
             }
 
-            Assert.That(Field<bool>(view, "_hostDrainQueued"), Is.True,
-                "and exactly one drain is queued to run them");
+            (Field<bool>(view, "_hostDrainQueued")).Should().BeTrue("and exactly one drain is queued to run them");
         }
         finally { window.Close(); }
     }
@@ -81,7 +78,7 @@ public class RenderCostTests
 
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(seen, Is.EqualTo(20));
+            seen.Should().Be(20);
         }
         finally { window.Close(); }
     }
@@ -106,7 +103,7 @@ public class RenderCostTests
             view.Terminal.Write($"{Esc}]99;;two{Bel}");
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(seen, Is.EqualTo(2), "the second must still have run");
+            seen.Should().Be(2, "the second must still have run");
         }
         finally { window.Close(); }
     }
@@ -128,15 +125,14 @@ public class RenderCostTests
             var waiting = Field<List<Action>>(view, "_pendingHostCallbacks");
             lock (waiting)
             {
-                Assert.That(waiting.Count, Is.EqualTo(1),
-                    "five shape changes, one job -- only the last was ever going to be visible");
+                waiting.Count.Should().Be(1, "five shape changes, one job -- only the last was ever going to be visible");
             }
 
             // And the shape that survives is the last one asked for.
             var pending = typeof(TerminalView).GetField("_pendingPointerShape",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            Assert.That(pending, Is.Not.Null, "_pendingPointerShape has been renamed; update this test");
-            Assert.That(pending!.GetValue(view), Is.EqualTo("progress"));
+            pending.Should().NotBeNull("_pendingPointerShape has been renamed; update this test");
+            (pending!.GetValue(view)).Should().Be("progress");
         }
         finally { window.Close(); }
     }
@@ -155,13 +151,12 @@ public class RenderCostTests
             for (var i = 0; i < 16; i++)
                 view.Terminal.Write($"{Esc}]4;{i};#00ff00{Bel}");
 
-            Assert.That(Field<bool>(view, "_paletteWalkQueued"), Is.True, "sanity: one is pending");
+            (Field<bool>(view, "_paletteWalkQueued")).Should().BeTrue("sanity: one is pending");
 
             var waiting = Field<List<Action>>(view, "_pendingHostCallbacks");
             lock (waiting)
             {
-                Assert.That(waiting.Count, Is.EqualTo(1),
-                    "sixteen colour changes, one walk queued");
+                waiting.Count.Should().Be(1, "sixteen colour changes, one walk queued");
             }
         }
         finally { window.Close(); }
@@ -177,11 +172,11 @@ public class RenderCostTests
         {
             view.Terminal.Write($"{Esc}]4;1;#00ff00{Bel}");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(Field<bool>(view, "_paletteWalkQueued"), Is.False, "sanity: the first one ran");
+            (Field<bool>(view, "_paletteWalkQueued")).Should().BeFalse("sanity: the first one ran");
 
             view.Terminal.Write($"{Esc}]4;2;#0000ff{Bel}");
 
-            Assert.That(Field<bool>(view, "_paletteWalkQueued"), Is.True);
+            (Field<bool>(view, "_paletteWalkQueued")).Should().BeTrue();
         }
         finally { window.Close(); }
     }
@@ -202,7 +197,7 @@ public class RenderCostTests
             Dispatcher.UIThread.RunJobs();
 
             var line = view.Terminal.Buffer.GetLine(view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y);
-            Assert.That(line, Is.Not.Null);
+            line.Should().NotBeNull();
             line!.Cache = new object();
 
             view.Foreground = new LinearGradientBrush
@@ -216,8 +211,7 @@ public class RenderCostTests
             // rebuild the cache (correctly, from the NEW brushes) before the assert, which then
             // read the rebuilt list as "the invalidation never happened". Same thread, no jobs run:
             // nothing can interleave between the set and this line.
-            Assert.That(line.Cache, Is.Null,
-                "a re-theme the palette cannot express still has to invalidate what was drawn");
+            line.Cache.Should().BeNull("a re-theme the palette cannot express still has to invalidate what was drawn");
         }
         finally { window.Close(); }
     }
@@ -227,21 +221,21 @@ public class RenderCostTests
     [AvaloniaTest]
     public void A_run_of_blanks_is_recognised_as_having_nothing_to_draw()
     {
-        Assert.That(Blank("    "), Is.True);
-        Assert.That(Blank("a   "), Is.False);
-        Assert.That(Blank(""), Is.False, "an empty run is not a run of blanks");
+        Blank("    ").Should().BeTrue();
+        Blank("a   ").Should().BeFalse();
+        Blank("").Should().BeFalse("an empty run is not a run of blanks");
 
         // Anything that merely LOOKS blank still occupies its cell in a way a font may render, so it
         // is left to draw rather than assumed invisible.
-        Assert.That(Blank("　"), Is.False, "ideographic space");
-        Assert.That(Blank("​"), Is.False, "zero-width space");
+        Blank("　").Should().BeFalse("ideographic space");
+        Blank("​").Should().BeFalse("zero-width space");
     }
 
     private static bool Blank(string text)
     {
         var m = typeof(TerminalView).GetMethod("IsBlankRun",
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(m, Is.Not.Null, "IsBlankRun has been renamed; this test needs updating");
+        m.Should().NotBeNull("IsBlankRun has been renamed; this test needs updating");
         return (bool)m!.Invoke(null, new object[] { text })!;
     }
 }

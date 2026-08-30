@@ -1,9 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Headless;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -16,7 +14,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// shows the two habits that produced most of them: claiming a routed event after the first await,
 /// and encoding a keystroke for one protocol when three are reachable.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class RegressionBucketTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -37,7 +35,7 @@ public class RegressionBucketTests
         var pty = new RecordingConnection();
         view.AttachConnection(pty);
         view.Focus();
-        Assert.That(view.IsFocused, Is.True, "sanity: OnKeyDown returns early without focus");
+        view.IsFocused.Should().BeTrue("sanity: OnKeyDown returns early without focus");
         return (view, pty, window);
     }
 
@@ -54,7 +52,7 @@ public class RegressionBucketTests
         // this, and so does any test that news up a view.
         var view = new TerminalView { Process = "" };
 
-        Assert.DoesNotThrow(() => view.Dispose());
+        ((Action)(() => view.Dispose())).Should().NotThrow();
     }
 
     [AvaloniaTest]
@@ -67,7 +65,7 @@ public class RegressionBucketTests
         var view = new TerminalView { Process = "" };
 
         view.Dispose();
-        Assert.DoesNotThrow(() => view.Dispose(), "a second Dispose must stay a no-op, not a throw");
+        ((Action)(() => view.Dispose())).Should().NotThrow("a second Dispose must stay a no-op, not a throw");
     }
 
     [AvaloniaTest]
@@ -85,8 +83,7 @@ public class RegressionBucketTests
 
             view.Dispose();
 
-            Assert.That(RunningTimers(view), Is.Empty,
-                "every DispatcherTimer the view owns must be stopped by Dispose");
+            RunningTimers(view).Should().BeEmpty("every DispatcherTimer the view owns must be stopped by Dispose");
         }
         finally { window.Close(); }
     }
@@ -121,7 +118,7 @@ public class RegressionBucketTests
             window.UpdateLayout();
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(window.Options, Is.SameAs(window.Terminal.Options));
+            window.Options.Should().BeSameAs(window.Terminal.Options);
         }
         finally { window.Close(); }
     }
@@ -140,7 +137,7 @@ public class RegressionBucketTests
             var before = window.Terminal.Buffer.Lines.MaxLength;
             window.Options!.Scrollback = window.Options.Scrollback + 500;
 
-            Assert.That(window.Terminal.Buffer.Lines.MaxLength, Is.GreaterThan(before));
+            window.Terminal.Buffer.Lines.MaxLength.Should().BeGreaterThan(before);
         }
         finally { window.Close(); }
     }
@@ -169,8 +166,7 @@ public class RegressionBucketTests
             var args = RightPress(view);
             view.RaiseEvent(args);
 
-            Assert.That(args.Handled, Is.True,
-                "the press must be claimed before the first await, not after the event has gone");
+            args.Handled.Should().BeTrue("the press must be claimed before the first await, not after the event has gone");
         }
         finally { window.Close(); }
     }
@@ -202,8 +198,7 @@ public class RegressionBucketTests
             var args = KeyPress(Key.X, KeyModifiers.Control, PhysicalKey.X, "x");
             view.RaiseEvent(args);
 
-            Assert.That(args.Handled, Is.False,
-                "with nothing to cut the chord belongs to the application");
+            args.Handled.Should().BeFalse("with nothing to cut the chord belongs to the application");
         }
         finally { window.Close(); }
     }
@@ -222,9 +217,8 @@ public class RegressionBucketTests
         {
             var sent = SelectAndType(view, pty, negotiate: $"{Esc}[>1u");
 
-            Assert.That(sent, Is.Not.Empty, "the keystroke reached the pty at all");
-            Assert.That(HasDeletion(sent), Is.True,
-                "the selection's deletion must travel with the key that replaces it: " + Readable(sent));
+            sent.Should().NotBeEmpty("the keystroke reached the pty at all");
+            HasDeletion(sent).Should().BeTrue("the selection's deletion must travel with the key that replaces it: " + Readable(sent));
         }
         finally { window.Close(); }
     }
@@ -244,13 +238,11 @@ public class RegressionBucketTests
             // 8, down and then up. Before the fix the deletion was generated through the legacy
             // path, so what went out was a bare 0x08 -- on the wire, and ignored by a process
             // reading records, which leaves a selection the user watched disappear still in the line.
-            Assert.That(sent, Does.Contain($"{Esc}[8;0;8;1;0;1_{Esc}[8;0;8;0;0;1_"),
-                "expected a Win32 Backspace record pair, got: " + Readable(sent));
+            sent.Should().Contain($"{Esc}[8;0;8;1;0;1_{Esc}[8;0;8;0;0;1_", "expected a Win32 Backspace record pair, got: " + Readable(sent));
 
             // And the character AFTER it, in one write: X is virtual key 88, unicode 120. Order is
             // the point -- a deletion arriving after the replacement types into the wrong line.
-            Assert.That(sent, Does.EndWith($"{Esc}[88;0;120;1;0;1_"),
-                "the key that replaces the selection must follow its deletion: " + Readable(sent));
+            sent.Should().EndWith($"{Esc}[88;0;120;1;0;1_", "the key that replaces the selection must follow its deletion: " + Readable(sent));
         }
         finally { window.Close(); }
     }
@@ -273,8 +265,7 @@ public class RegressionBucketTests
         view.RaiseEvent(KeyPress(Key.Left, KeyModifiers.Shift));
         Thread.Sleep(60);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True,
-            "the test needs a live keyboard selection before it can assert anything about removing one");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("the test needs a live keyboard selection before it can assert anything about removing one");
 
         // AFTER the selection exists, so negotiating cannot interfere with making it.
         view.Terminal.Write(negotiate);

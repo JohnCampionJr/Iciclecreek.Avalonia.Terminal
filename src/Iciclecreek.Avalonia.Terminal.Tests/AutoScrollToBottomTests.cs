@@ -2,8 +2,6 @@ using System.Collections.Concurrent;
 using System.Text;
 using Porta.Pty;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -15,7 +13,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// into, so each assertion is made at a known point rather than against whatever a real shell happened to
 /// have written by then.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class AutoScrollToBottomTests
 {
     // ── Harness ─────────────────────────────────────────────────────────────────────────────────
@@ -66,7 +64,7 @@ public class AutoScrollToBottomTests
         view.AttachConnection(connection);
 
         await PushAndSettle(view, connection, Lines(200));
-        Assert.That(view.ViewportY, Is.EqualTo(view.MaxScrollback), "a following view sits at the tail");
+        view.ViewportY.Should().Be(view.MaxScrollback, "a following view sits at the tail");
 
         connection.Done();
         window.Close();
@@ -91,8 +89,8 @@ public class AutoScrollToBottomTests
 
         await PushAndSettle(view, connection, Lines(200, "more"));
 
-        Assert.That(view.ViewportY, Is.EqualTo(parked), "output must not move a viewport the user parked");
-        Assert.That(view.ViewportY, Is.LessThan(view.MaxScrollback), "and the buffer did grow underneath it");
+        view.ViewportY.Should().Be(parked, "output must not move a viewport the user parked");
+        view.ViewportY.Should().BeLessThan(view.MaxScrollback, "and the buffer did grow underneath it");
 
         connection.Done();
         window.Close();
@@ -114,7 +112,7 @@ public class AutoScrollToBottomTests
         view.ViewportY = view.MaxScrollback;           // back to the bottom
         await PushAndSettle(view, connection, Lines(50, "again"));
 
-        Assert.That(view.ViewportY, Is.EqualTo(view.MaxScrollback), "returning to the tail resumes following");
+        view.ViewportY.Should().Be(view.MaxScrollback, "returning to the tail resumes following");
 
         connection.Done();
         window.Close();
@@ -134,8 +132,8 @@ public class AutoScrollToBottomTests
 
         await PushAndSettle(view, connection, Lines(200));
 
-        Assert.That(view.ViewportY, Is.Zero, "with auto-scroll off the viewport never moves on its own");
-        Assert.That(view.MaxScrollback, Is.GreaterThan(0), "though the buffer still grew");
+        view.ViewportY.Should().Be(0, "with auto-scroll off the viewport never moves on its own");
+        view.MaxScrollback.Should().BeGreaterThan(0, "though the buffer still grew");
 
         connection.Done();
         window.Close();
@@ -151,13 +149,13 @@ public class AutoScrollToBottomTests
     {
         var view = new TerminalView { Process = "", AutoScrollToBottom = false };
         var window = Show(view);
-        Assert.That(view.AutoScrollToBottom, Is.False, "the property itself round-trips");
+        view.AutoScrollToBottom.Should().BeFalse("the property itself round-trips");
 
         var connection = new PushConnection();
         view.AttachConnection(connection);
         await PushAndSettle(view, connection, Lines(100));
 
-        Assert.That(view.ViewportY, Is.Zero, "the reader saw the mirrored value, not the default");
+        view.ViewportY.Should().Be(0, "the reader saw the mirrored value, not the default");
 
         connection.Done();
         window.Close();
@@ -182,7 +180,7 @@ public class AutoScrollToBottomTests
         var parked = view.ViewportY;
 
         await PushAndSettle(view, connection, Lines(100, "more"));
-        Assert.That(view.ViewportY, Is.EqualTo(parked), "a scrollbar-driven move has to pause the follow too");
+        view.ViewportY.Should().Be(parked, "a scrollbar-driven move has to pause the follow too");
 
         connection.Done();
         window.Close();
@@ -196,10 +194,10 @@ public class AutoScrollToBottomTests
     public void TerminalControl_keeps_a_value_set_before_its_template_runs()
     {
         var control = new TerminalControl { Process = "", AutoScrollToBottom = false };
-        Assert.That(control.AutoScrollToBottom, Is.False, "set before the template is applied");
+        control.AutoScrollToBottom.Should().BeFalse("set before the template is applied");
 
         var window = Show(control);
-        Assert.That(control.AutoScrollToBottom, Is.False, "and still false once it has");
+        control.AutoScrollToBottom.Should().BeFalse("and still false once it has");
 
         window.Close();
     }
@@ -228,15 +226,13 @@ public class AutoScrollToBottomTests
         view.ViewportY = view.MaxScrollback - 20;
         var parkedY = view.ViewportY;
         var parkedText = TopVisibleLine(view);
-        Assert.That(parkedText, Does.StartWith("old "), "sanity: parked over the earlier output");
+        parkedText.Should().StartWith("old ", "sanity: parked over the earlier output");
 
         // Enough to drive the ring past capacity and force eviction.
         await PushAndSettle(view, connection, Lines(90, "new"));
 
-        Assert.That(view.ViewportY, Is.LessThan(parkedY),
-            "sanity: the ring evicted, so the compensation had something to do");
-        Assert.That(TopVisibleLine(view), Is.EqualTo(parkedText),
-            "the line under the user must not slide away as the ring evicts beneath it");
+        view.ViewportY.Should().BeLessThan(parkedY, "sanity: the ring evicted, so the compensation had something to do");
+        TopVisibleLine(view).Should().Be(parkedText, "the line under the user must not slide away as the ring evicts beneath it");
 
         connection.Done();
         window.Close();
@@ -267,18 +263,18 @@ public class AutoScrollToBottomTests
         view.AttachConnection(connection);
 
         await PushAndSettle(view, connection, Lines(200));
-        Assert.That(view.IsFollowingTail, Is.True, "a fresh view follows");
+        view.IsFollowingTail.Should().BeTrue("a fresh view follows");
 
         view.ViewportY = view.MaxScrollback - 50;
         await PushAndSettle(view, connection, Lines(50, "more"));
-        Assert.That(view.IsFollowingTail, Is.False, "scrolling back stops the follow");
+        view.IsFollowingTail.Should().BeFalse("scrolling back stops the follow");
 
         view.FollowTail();
-        Assert.That(view.ViewportY, Is.EqualTo(view.MaxScrollback), "and this puts it back");
+        view.ViewportY.Should().Be(view.MaxScrollback, "and this puts it back");
 
         await PushAndSettle(view, connection, Lines(50, "again"));
-        Assert.That(view.IsFollowingTail, Is.True, "following again, so new output drags the viewport");
-        Assert.That(view.ViewportY, Is.EqualTo(view.MaxScrollback));
+        view.IsFollowingTail.Should().BeTrue("following again, so new output drags the viewport");
+        view.ViewportY.Should().Be(view.MaxScrollback);
 
         connection.Done();
         window.Close();
@@ -300,7 +296,7 @@ public class AutoScrollToBottomTests
         var before = view.ViewportY;
 
         view.FollowTail();
-        Assert.That(view.ViewportY, Is.EqualTo(before), "auto-scroll off means the host owns the viewport");
+        view.ViewportY.Should().Be(before, "auto-scroll off means the host owns the viewport");
 
         connection.Done();
         window.Close();
@@ -331,7 +327,7 @@ public class AutoScrollToBottomTests
         // The follow state is SAMPLED at each write rather than latched, so it takes a write for the pause
         // to be observable — same idiom as the FollowTail tests above.
         await PushAndSettle(view, connection, Lines(20, "more"));
-        Assert.That(view.IsFollowingTail, Is.False, "sanity: scrolled back, so the follow is paused");
+        view.IsFollowingTail.Should().BeFalse("sanity: scrolled back, so the follow is paused");
 
         var parkedY = view.ViewportY;
         var parkedText = TopVisibleLine(view);
@@ -341,8 +337,8 @@ public class AutoScrollToBottomTests
         await WaitUntil(() => exited, "the exit was reported, so the notice has been written");
         await Task.Delay(50);   // let the posted change notifications drain
 
-        Assert.That(view.ViewportY, Is.EqualTo(parkedY), "the exit notice must not resume a paused follow");
-        Assert.That(TopVisibleLine(view), Is.EqualTo(parkedText), "and the user keeps reading what they were");
+        view.ViewportY.Should().Be(parkedY, "the exit notice must not resume a paused follow");
+        TopVisibleLine(view).Should().Be(parkedText, "and the user keeps reading what they were");
 
         window.Close();
     });
@@ -376,14 +372,12 @@ public class AutoScrollToBottomTests
         view.ViewportY = view.MaxScrollback - 20;
         var parkedY = view.ViewportY;
         var parkedText = TopVisibleLine(view);
-        Assert.That(parkedText, Does.StartWith("old "), "sanity: parked over the earlier output");
+        parkedText.Should().StartWith("old ", "sanity: parked over the earlier output");
 
         await PushAndSettle(view, connection, Lines(90, "new"));
 
-        Assert.That(view.ViewportY, Is.LessThan(parkedY),
-            "sanity: the ring evicted, so the compensation had something to do");
-        Assert.That(TopVisibleLine(view), Is.EqualTo(parkedText),
-            "compensated exactly once — neither dropped by the detach nor doubled by the re-attach");
+        view.ViewportY.Should().BeLessThan(parkedY, "sanity: the ring evicted, so the compensation had something to do");
+        TopVisibleLine(view).Should().Be(parkedText, "compensated exactly once — neither dropped by the detach nor doubled by the re-attach");
 
         connection.Done();
         window.Close();
@@ -412,7 +406,7 @@ public class AutoScrollToBottomTests
         // still true from the push above, OnBufferTrimmed returns early whether it is subscribed or not,
         // and this test asserts nothing. Small enough not to evict on its own.
         await PushAndSettle(view, connection, Lines(10, "settle"));
-        Assert.That(view.IsFollowingTail, Is.False, "sanity: parked, so there is compensation to suppress");
+        view.IsFollowingTail.Should().BeFalse("sanity: parked, so there is compensation to suppress");
 
         var parkedY = view.ViewportY;
 
@@ -423,8 +417,7 @@ public class AutoScrollToBottomTests
         // leave this asserting on two things at once.
         view.Terminal.Write(Lines(90, "new"));
 
-        Assert.That(view.Terminal.Buffer.ViewportY, Is.EqualTo(parkedY),
-            "a detached view must not still be moving the viewport in response to the buffer");
+        view.Terminal.Buffer.ViewportY.Should().Be(parkedY, "a detached view must not still be moving the viewport in response to the buffer");
 
         connection.Done();          // let the read loop unwind now the assertions are made
         window.Close();
@@ -436,7 +429,7 @@ public class AutoScrollToBottomTests
     /// loop. Read through a buffer far SMALLER than a pushed chunk and the bytes must still arrive whole and
     /// in order.
     /// </summary>
-    [Test]
+    [TestMethod]
     public void PushStream_honours_the_requested_count()
     {
         var stream = new PushStream();
@@ -449,12 +442,11 @@ public class AutoScrollToBottomTests
         int n;
         while ((n = stream.Read(small, 0, small.Length)) > 0)
         {
-            Assert.That(n, Is.LessThanOrEqualTo(small.Length), "a stream must never write past the count it was given");
+            n.Should().BeLessThanOrEqualTo(small.Length, "a stream must never write past the count it was given");
             got.Write(small, 0, n);
         }
 
-        Assert.That(Encoding.UTF8.GetString(got.ToArray()), Is.EqualTo(pushed),
-            "the chunk is delivered whole and in order across as many reads as it takes");
+        Encoding.UTF8.GetString(got.ToArray()).Should().Be(pushed, "the chunk is delivered whole and in order across as many reads as it takes");
     }
 
     private static Task Run(Func<Task> body) => body();

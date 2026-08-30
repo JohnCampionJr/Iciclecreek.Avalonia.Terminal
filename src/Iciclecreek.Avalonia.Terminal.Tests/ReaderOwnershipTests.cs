@@ -1,9 +1,7 @@
 using System.Text;
 using Porta.Pty;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -20,7 +18,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>Every test here drives the seam through a connection whose output the test controls, so
 /// "a chunk arrives after the handover" is an event that can be staged rather than raced for.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class ReaderOwnershipTests
 {
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(5);
@@ -173,8 +171,7 @@ public class ReaderOwnershipTests
         {
             pty.Emit("before the handover\r\n");
             Await(() => Screen(view).Contains("before the handover"));
-            Assert.That(Screen(view), Does.Contain("before the handover"),
-                "sanity: the loop is running and delivering, or the rest of this proves nothing");
+            Screen(view).Should().Contain("before the handover", "sanity: the loop is running and delivering, or the rest of this proves nothing");
 
             view.DetachConnection();
 
@@ -182,8 +179,7 @@ public class ReaderOwnershipTests
             Thread.Sleep(300);
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(Screen(view), Does.Not.Contain("AFTER THE HANDOVER"),
-                "a chunk read after the detach belongs to the connection's new owner");
+            Screen(view).Should().NotContain("AFTER THE HANDOVER", "a chunk read after the detach belongs to the connection's new owner");
         }
         finally { window.Close(); }
     }
@@ -207,7 +203,7 @@ public class ReaderOwnershipTests
 
             pty.Emit("first\r\n");
             Await(() => Seen(seen).Contains("first"));
-            Assert.That(Seen(seen), Does.Contain("first"), "sanity: the sniffer is wired up");
+            Seen(seen).Should().Contain("first", "sanity: the sniffer is wired up");
 
             view.DetachConnection();
 
@@ -215,7 +211,7 @@ public class ReaderOwnershipTests
             Thread.Sleep(300);
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(Seen(seen), Does.Not.Contain("STALE"));
+            Seen(seen).Should().NotContain("STALE");
         }
         finally { window.Close(); }
     }
@@ -244,7 +240,7 @@ public class ReaderOwnershipTests
 
             var first = view.SendInputAsync("first");
             Await(() => pty.WriteInProgress);
-            Assert.That(pty.WriteInProgress, Is.True, "sanity: the first send is holding the semaphore");
+            pty.WriteInProgress.Should().BeTrue("sanity: the first send is holding the semaphore");
 
             var second = view.SendInputAsync("TYPED AFTER THE HANDOVER");
             Thread.Sleep(100);
@@ -258,13 +254,11 @@ public class ReaderOwnershipTests
             // exactly what this test asserts, so a deadlock would have passed it. It would also
             // leave both tasks running past the end of the test, in a fixture that shares one
             // application with the whole assembly.
-            Assert.That(Task.WaitAll(new[] { first, second }, TimeSpan.FromSeconds(5)), Is.True,
-                "a send that never finished would make the assertion below vacuously true");
+            Task.WaitAll(new[] { first, second }, TimeSpan.FromSeconds(5)).Should().BeTrue("a send that never finished would make the assertion below vacuously true");
 
             Thread.Sleep(100);
 
-            Assert.That(pty.Written, Does.Not.Contain("TYPED AFTER THE HANDOVER"),
-                "input aimed at a process the view no longer owns belongs to nothing");
+            pty.Written.Should().NotContain("TYPED AFTER THE HANDOVER", "input aimed at a process the view no longer owns belongs to nothing");
         }
         finally { window.Close(); }
     }

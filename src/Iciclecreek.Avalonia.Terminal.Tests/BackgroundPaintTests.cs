@@ -1,8 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -14,7 +12,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <see cref="DrawingContext"/> that keeps every operation issued into it. That is enough to answer the only
 /// question that matters here — did a fill covering the whole control go out, and in which brush.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class BackgroundPaintTests
 {
     /// <summary>Every drawing the view issued, flattened.</summary>
@@ -50,18 +48,17 @@ public class BackgroundPaintTests
 
         var drawings = Capture(view);
 
-        Assert.That(view.Bounds.Width, Is.GreaterThan(0), "sanity: the view was arranged, so there is a surface to fill");
+        view.Bounds.Width.Should().BeGreaterThan(0, "sanity: the view was arranged, so there is a surface to fill");
 
         var fills = drawings.OfType<GeometryDrawing>().ToList();
-        Assert.That(fills, Is.Not.Empty, "Render issued no fills at all");
+        fills.Should().NotBeEmpty("Render issued no fills at all");
 
         var surface = fills.FirstOrDefault(d =>
             d.Brush is ISolidColorBrush b && b.Color == Colors.Blue &&
             d.Geometry?.Bounds.Width >= view.Bounds.Width &&
             d.Geometry?.Bounds.Height >= view.Bounds.Height);
 
-        Assert.That(surface, Is.Not.Null,
-            "no fill in the Background brush covering the control — setting Background does nothing. "
+        surface.Should().NotBeNull("no fill in the Background brush covering the control — setting Background does nothing. "
             + $"Issued {fills.Count} fill(s): "
             + string.Join(", ", fills.Select(f => $"{(f.Brush as ISolidColorBrush)?.Color} {f.Geometry?.Bounds}")));
 
@@ -78,8 +75,7 @@ public class BackgroundPaintTests
 
         var first = Capture(view).OfType<GeometryDrawing>().FirstOrDefault();
 
-        Assert.That((first?.Brush as ISolidColorBrush)?.Color, Is.EqualTo(Colors.Blue),
-            "the background must go down first, underneath every cell");
+        ((first?.Brush as ISolidColorBrush)?.Color).Should().Be(Colors.Blue, "the background must go down first, underneath every cell");
 
         window.Close();
     }
@@ -97,7 +93,7 @@ public class BackgroundPaintTests
             .Any(d => d.Brush is ISolidColorBrush { Color.A: 255 } &&
                       d.Geometry?.Bounds.Width >= view.Bounds.Width);
 
-        Assert.That(opaque, Is.False, "a transparent terminal must not stamp an opaque rectangle");
+        opaque.Should().BeFalse("a transparent terminal must not stamp an opaque rectangle");
 
         window.Close();
     }
@@ -119,8 +115,7 @@ public class BackgroundPaintTests
             .Where(d => d.Brush is ISolidColorBrush { Color.A: > 0 })
             .ToList();
 
-        Assert.That(fills, Is.Empty,
-            "a run that asked for no background painted one anyway: "
+        fills.Should().BeEmpty("a run that asked for no background painted one anyway: "
             + string.Join(", ", fills.Select(f => $"{(f.Brush as ISolidColorBrush)?.Color} {f.Geometry?.Bounds}")));
 
         window.Close();
@@ -141,7 +136,7 @@ public class BackgroundPaintTests
         var painted = Capture(view).OfType<GeometryDrawing>()
             .Any(d => d.Brush is ISolidColorBrush { Color.A: 255 });
 
-        Assert.That(painted, Is.True, "an explicitly coloured cell must still paint over a transparent surface");
+        painted.Should().BeTrue("an explicitly coloured cell must still paint over a transparent surface");
 
         window.Close();
     }

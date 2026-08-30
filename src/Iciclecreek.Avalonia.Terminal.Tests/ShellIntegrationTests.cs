@@ -1,7 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -9,7 +7,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// OSC 133 shell integration. A shell that emits it says exactly where its prompt ends, which is the one
 /// thing the input-start heuristic can only infer — so when it is present it wins outright.
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ShellIntegrationTests
 {
     private const string Osc = "\u001b]";
@@ -44,14 +42,13 @@ public class ShellIntegrationTests
         view.Terminal.Write("ls -la");
         await Task.Delay(80);
 
-        Assert.That(view.InputStart, Is.EqualTo((0, 12)), "recorded from the marker, not guessed");
+        view.InputStart.Should().Be((0, 12), "recorded from the marker, not guessed");
 
         Press(view, Key.Home, KeyModifiers.Shift);
         await Task.Delay(80);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("ls -la"),
-            "the command, and none of the prompt");
-        Assert.That(pty.Written, Is.Empty);
+        view.Terminal.Selection.GetSelectionText().Should().Be("ls -la", "the command, and none of the prompt");
+        pty.Written.Should().BeEmpty();
 
         window.Close();
     }
@@ -66,7 +63,7 @@ public class ShellIntegrationTests
         view.Terminal.Write(Osc + "133;I" + St);
         await Task.Delay(80);
 
-        Assert.That(view.InputStart, Is.EqualTo((0, 2)));
+        view.InputStart.Should().Be((0, 2));
         window.Close();
     }
 
@@ -83,11 +80,11 @@ public class ShellIntegrationTests
         view.Terminal.Write("second-prompt$ " + Osc + "133;B" + St + "two");
         await Task.Delay(80);
 
-        Assert.That(view.InputStart, Is.EqualTo((1, 15)), "the second prompt's edge, on its own row");
+        view.InputStart.Should().Be((1, 15), "the second prompt's edge, on its own row");
 
         Press(view, Key.Home, KeyModifiers.Shift);
         await Task.Delay(80);
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("two"));
+        view.Terminal.Selection.GetSelectionText().Should().Be("two");
 
         window.Close();
     }
@@ -120,8 +117,7 @@ public class ShellIntegrationTests
         view.RaiseEvent(new TextInputEventArgs { RoutedEvent = InputElement.TextInputEvent, Text = "x" });
         await Task.Delay(120);
 
-        Assert.That(view.InputStart, Is.EqualTo((0, 14)),
-            "inferred from where the cursor stood when typing began");
+        view.InputStart.Should().Be((0, 14), "inferred from where the cursor stood when typing began");
 
         pty.Done();
         window.Close();

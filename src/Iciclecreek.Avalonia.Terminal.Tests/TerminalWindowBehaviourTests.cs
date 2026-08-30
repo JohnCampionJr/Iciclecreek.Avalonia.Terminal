@@ -1,7 +1,5 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Interactivity;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -17,7 +15,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>Every args type here is public with a public constructor and a settable RoutedEvent, so no
 /// reflection is needed.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalWindowBehaviourTests
 {
     /// <summary>Raise a routed event on the inner view, exactly as the emulator would.</summary>
@@ -34,7 +32,7 @@ public class TerminalWindowBehaviourTests
         {
             Raise(window, new TitleChangedEventArgs("after") { RoutedEvent = TerminalView.TitleChangedEvent });
 
-            Assert.That(window.Title, Is.EqualTo("after"), $"observed '{window.Title}'");
+            window.Title.Should().Be("after", $"observed '{window.Title}'");
         }
         finally
         {
@@ -58,8 +56,7 @@ public class TerminalWindowBehaviourTests
         {
             Raise(window, new TitleChangedEventArgs("hijacked") { RoutedEvent = TerminalView.TitleChangedEvent });
 
-            Assert.That(window.Title, Is.EqualTo("mine"),
-                $"the host opted out of terminal title updates and was overruled. Observed '{window.Title}'");
+            window.Title.Should().Be("mine", $"the host opted out of terminal title updates and was overruled. Observed '{window.Title}'");
         }
         finally
         {
@@ -77,8 +74,7 @@ public class TerminalWindowBehaviourTests
         {
             Raise(window, new RoutedEventArgs { RoutedEvent = TerminalView.WindowMaximizedEvent });
 
-            Assert.That(window.WindowState, Is.EqualTo(WindowState.Maximized),
-                $"observed {window.WindowState}");
+            window.WindowState.Should().Be(WindowState.Maximized, $"observed {window.WindowState}");
         }
         finally
         {
@@ -96,8 +92,7 @@ public class TerminalWindowBehaviourTests
         {
             Raise(window, new RoutedEventArgs { RoutedEvent = TerminalView.WindowRestoredEvent });
 
-            Assert.That(window.WindowState, Is.EqualTo(WindowState.Normal),
-                $"observed {window.WindowState}");
+            window.WindowState.Should().Be(WindowState.Normal, $"observed {window.WindowState}");
         }
         finally
         {
@@ -115,11 +110,11 @@ public class TerminalWindowBehaviourTests
         {
             Raise(window, new WindowMovedEventArgs(120, 240) { RoutedEvent = TerminalView.WindowMovedEvent });
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(window.Position.X, Is.EqualTo(120), $"observed X={window.Position.X}");
-                Assert.That(window.Position.Y, Is.EqualTo(240), $"observed Y={window.Position.Y}");
-            });
+            using (new AssertionScope())
+        {
+                window.Position.X.Should().Be(120, $"observed X={window.Position.X}");
+                window.Position.Y.Should().Be(240, $"observed Y={window.Position.Y}");
+            };
         }
         finally
         {
@@ -137,11 +132,11 @@ public class TerminalWindowBehaviourTests
         {
             Raise(window, new WindowResizedEventArgs(640, 480) { RoutedEvent = TerminalView.WindowResizedEvent });
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(window.Width, Is.EqualTo(640), $"observed {window.Width}");
-                Assert.That(window.Height, Is.EqualTo(480), $"observed {window.Height}");
-            });
+            using (new AssertionScope())
+        {
+                window.Width.Should().Be(640, $"observed {window.Width}");
+                window.Height.Should().Be(480, $"observed {window.Height}");
+            };
         }
         finally
         {
@@ -168,8 +163,7 @@ public class TerminalWindowBehaviourTests
 
             Raise(window, new TitleChangedEventArgs("hijacked") { RoutedEvent = TerminalView.TitleChangedEvent });
 
-            Assert.That(window.Title, Is.EqualTo("mine"),
-                $"a host that marked the event handled still had its title overwritten. Observed '{window.Title}'");
+            window.Title.Should().Be("mine", $"a host that marked the event handled still had its title overwritten. Observed '{window.Title}'");
         }
         finally
         {
@@ -195,11 +189,11 @@ public class TerminalWindowBehaviourTests
 
             Raise(window, args);
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(args.Handled, Is.True, "the window should have answered the query");
-                Assert.That(args.Title, Is.EqualTo("answer me"), $"observed '{args.Title ?? "null"}'");
-            });
+            using (new AssertionScope())
+        {
+                args.Handled.Should().BeTrue("the window should have answered the query");
+                args.Title.Should().Be("answer me", $"observed '{args.Title ?? "null"}'");
+            };
         }
         finally
         {

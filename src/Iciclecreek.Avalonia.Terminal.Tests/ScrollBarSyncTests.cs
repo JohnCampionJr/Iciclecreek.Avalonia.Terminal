@@ -1,7 +1,5 @@
 using Avalonia.Controls.Primitives;
-using Avalonia.Headless.NUnit;
 using Avalonia.VisualTree;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -15,13 +13,13 @@ namespace Iciclecreek.Terminal.Tests;
 /// wrong would leave the scrollbar silently ignoring the viewport — a worse bug than the one being fixed,
 /// and one that would not be obvious until someone scrolled.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ScrollBarSyncTests
 {
     private static ScrollBar ScrollBarOf(TerminalControl control)
     {
         var bar = control.GetVisualDescendants().OfType<ScrollBar>().FirstOrDefault();
-        Assert.That(bar, Is.Not.Null, "PART_ScrollBar was not realised, so nothing below is meaningful");
+        bar.Should().NotBeNull("PART_ScrollBar was not realised, so nothing below is meaningful");
         return bar!;
     }
 
@@ -57,15 +55,13 @@ public class ScrollBarSyncTests
             FillScrollback(control);
             var bar = ScrollBarOf(control);
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(bar.Minimum, Is.EqualTo(0), "0 is the top of the scrollback");
-                Assert.That(bar.Maximum, Is.EqualTo(control.MaxScrollback),
-                    $"observed Maximum={bar.Maximum} MaxScrollback={control.MaxScrollback}");
-                Assert.That(bar.ViewportSize, Is.EqualTo(control.ViewportLines),
-                    "the thumb size comes from this, so a wrong value makes the thumb the wrong length");
-                Assert.That(bar.IsVisible, Is.True, "there is scrollback, so the bar should show");
-            });
+            using (new AssertionScope())
+        {
+                bar.Minimum.Should().Be(0, "0 is the top of the scrollback");
+                bar.Maximum.Should().Be(control.MaxScrollback, $"observed Maximum={bar.Maximum} MaxScrollback={control.MaxScrollback}");
+                bar.ViewportSize.Should().Be(control.ViewportLines, "the thumb size comes from this, so a wrong value makes the thumb the wrong length");
+                bar.IsVisible.Should().BeTrue("there is scrollback, so the bar should show");
+            };
         }
         finally
         {
@@ -87,14 +83,13 @@ public class ScrollBarSyncTests
         {
             FillScrollback(control);
             var bar = ScrollBarOf(control);
-            Assume.That(control.MaxScrollback, Is.GreaterThan(10), "needs room to scroll");
+            control.MaxScrollback.Should().BeGreaterThan(10, "needs room to scroll");
 
             control.ViewportY = 7;
-            Assert.That(bar.Value, Is.EqualTo(7),
-                $"the thumb ignored a viewport change. observed Value={bar.Value} ViewportY={control.ViewportY}");
+            bar.Value.Should().Be(7, $"the thumb ignored a viewport change. observed Value={bar.Value} ViewportY={control.ViewportY}");
 
             control.ViewportY = 0;
-            Assert.That(bar.Value, Is.EqualTo(0), $"observed Value={bar.Value}");
+            bar.Value.Should().Be(0, $"observed Value={bar.Value}");
         }
         finally
         {
@@ -117,15 +112,12 @@ public class ScrollBarSyncTests
 
             FillScrollback(control, 150);
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(bar.Maximum, Is.GreaterThan(rangeBefore),
-                    $"observed Maximum={bar.Maximum} was {rangeBefore}");
-                Assert.That(bar.Maximum, Is.EqualTo(control.MaxScrollback),
-                    $"observed Maximum={bar.Maximum} MaxScrollback={control.MaxScrollback}");
-                Assert.That(bar.Value, Is.EqualTo(control.ViewportY),
-                    $"the thumb drifted from the viewport. Value={bar.Value} ViewportY={control.ViewportY}");
-            });
+            using (new AssertionScope())
+        {
+                bar.Maximum.Should().BeGreaterThan(rangeBefore, $"observed Maximum={bar.Maximum} was {rangeBefore}");
+                bar.Maximum.Should().Be(control.MaxScrollback, $"observed Maximum={bar.Maximum} MaxScrollback={control.MaxScrollback}");
+                bar.Value.Should().Be(control.ViewportY, $"the thumb drifted from the viewport. Value={bar.Value} ViewportY={control.ViewportY}");
+            };
         }
         finally
         {
@@ -152,10 +144,10 @@ public class ScrollBarSyncTests
         {
             var bar = ScrollBarOf(control);
 
-            Assert.That(control.MaxScrollback, Is.EqualTo(0), "a fresh terminal has nothing above the screen");
-            Assert.That(bar.Maximum, Is.EqualTo(0), "nothing to scroll, so no range to offer");
-            Assert.That(bar.IsEnabled, Is.False, "and it should not pretend otherwise");
-            Assert.That(bar.IsVisible, Is.True, "but it keeps its column — taking it away moves the terminal");
+            control.MaxScrollback.Should().Be(0, "a fresh terminal has nothing above the screen");
+            bar.Maximum.Should().Be(0, "nothing to scroll, so no range to offer");
+            bar.IsEnabled.Should().BeFalse("and it should not pretend otherwise");
+            bar.IsVisible.Should().BeTrue("but it keeps its column — taking it away moves the terminal");
         }
         finally
         {

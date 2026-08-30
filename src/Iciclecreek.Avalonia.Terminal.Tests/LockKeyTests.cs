@@ -1,7 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -9,7 +7,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// CapsLock, NumLock and ScrollLock are modifier keys pressed on their own — they produce no character —
 /// but <c>IsModifierKey</c> does not list them, so the terminal treats pressing one as typing.
 /// </summary>
-[TestFixture]
+[TestClass]
 public class LockKeyTests
 {
     private static (TerminalView view, Window window) LiveFocusedView()
@@ -20,7 +18,7 @@ public class LockKeyTests
         window.UpdateLayout();
         view.AttachConnection(new RecordingConnection());
         view.Focus();
-        Assert.That(view.IsFocused, Is.True, "sanity: OnKeyDown returns early without focus");
+        view.IsFocused.Should().BeTrue("sanity: OnKeyDown returns early without focus");
         return (view, window);
     }
 
@@ -32,9 +30,9 @@ public class LockKeyTests
     /// "a bare modifier press doesn't clear an active selection before the rest of a copy shortcut is
     /// typed" — and CapsLock is exactly as much a bare modifier press as Shift is.
     /// </summary>
-    [TestCase(Key.CapsLock)]
-    [TestCase(Key.NumLock)]
-    [TestCase(Key.Scroll)]
+    [DataRow(Key.CapsLock)]
+    [DataRow(Key.NumLock)]
+    [DataRow(Key.Scroll)]
     [AvaloniaTest]
     public void A_lock_key_does_not_clear_the_selection(Key key)
     {
@@ -43,12 +41,11 @@ public class LockKeyTests
         view.Terminal.Selection.StartSelection(0, 0, XTerm.Selection.SelectionMode.Normal);
         view.Terminal.Selection.UpdateSelection(4, 0);
         view.Terminal.Selection.EndSelection();
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity: there is a selection to lose");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("sanity: there is a selection to lose");
 
         PressKey(view, key);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True,
-            $"{key} produces no character — pressing it is not typing");
+        view.Terminal.Selection.HasSelection.Should().BeTrue($"{key} produces no character — pressing it is not typing");
 
         window.Close();
     }
@@ -65,7 +62,7 @@ public class LockKeyTests
 
         PressKey(view, Key.LeftShift);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True);
+        view.Terminal.Selection.HasSelection.Should().BeTrue();
         window.Close();
     }
 }

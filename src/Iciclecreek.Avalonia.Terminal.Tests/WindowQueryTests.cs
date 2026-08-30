@@ -1,6 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -15,7 +13,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>Asserted on what reaches the pty, because that is the part a program can see. A handler that sets
 /// the right values on the wrong thread looks identical from inside.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class WindowQueryTests
 {
     private const string Esc = "\u001b";
@@ -54,9 +52,9 @@ public class WindowQueryTests
         });
     }
 
-    [TestCase("[14t", TestName = "pixel size")]
-    [TestCase("[16t", TestName = "cell size")]
-    [TestCase("[13t", TestName = "window position")]
+    [DataRow("[14t", DisplayName = "pixel size")]
+    [DataRow("[16t", DisplayName = "cell size")]
+    [DataRow("[13t", DisplayName = "window position")]
     [AvaloniaTest]
     public async Task A_window_query_is_answered(string query)
     {
@@ -65,9 +63,8 @@ public class WindowQueryTests
 
         view.Terminal.Write(Esc + query);
 
-        Assert.That(await PtyWaits.AwaitOutput(pty), Is.Not.Empty,
-            "nothing was sent back — the handler's answer arrived after the emulator had stopped listening");
-        Assert.That(pty.Written, Does.StartWith(Esc + "["), "and it should be a CSI report");
+        (await PtyWaits.AwaitOutput(pty)).Should().NotBeEmpty("nothing was sent back — the handler's answer arrived after the emulator had stopped listening");
+        pty.Written.Should().StartWith(Esc + "[", "and it should be a CSI report");
 
         window.Close();
     }
@@ -85,9 +82,8 @@ public class WindowQueryTests
 
         view.Terminal.Write(Esc + "[16t");
 
-        Assert.That(await PtyWaits.AwaitOutput(pty), Is.Not.Empty,
-            "the view knows its own cell size and must say so");
-        Assert.That(pty.Written, Does.StartWith(Esc + "[6;"), "CSI 6 ; height ; width t");
+        (await PtyWaits.AwaitOutput(pty)).Should().NotBeEmpty("the view knows its own cell size and must say so");
+        pty.Written.Should().StartWith(Esc + "[6;", "CSI 6 ; height ; width t");
 
         window.Close();
     }
@@ -105,7 +101,7 @@ public class WindowQueryTests
         view.Terminal.Write(Esc + "[13t");
         await Task.Delay(150);
 
-        Assert.That(pty.Written, Is.Empty);
+        pty.Written.Should().BeEmpty();
 
         window.Close();
     }
@@ -125,8 +121,7 @@ public class WindowQueryTests
 
         view.Terminal.Write(Esc + "[13t");
 
-        Assert.That(await PtyWaits.AwaitOutput(pty), Does.Contain("20").And.Contain("10"),
-            "CSI 3 ; x ; y t with the handler's coordinates");
+        (await PtyWaits.AwaitOutput(pty)).Should().Contain("20").And.Contain("10", "CSI 3 ; x ; y t with the handler's coordinates");
 
         window.Close();
     }
@@ -145,9 +140,9 @@ public class WindowQueryTests
         view.Terminal.Write(Esc + "[16t");
 
         var written = await PtyWaits.AwaitOutput(pty);
-        Assert.That(written, Does.StartWith(Esc + "[6;"));
-        Assert.That(written, Does.Not.Contain("640").And.Not.Contain("480"),
-            "the view's real cell size goes out, not the handler's fiction");
+        written.Should().StartWith(Esc + "[6;");
+        written.Should().NotContain("640");
+        written.Should().NotContain("480", "the view's real cell size goes out, not the handler's fiction");
 
         window.Close();
     }

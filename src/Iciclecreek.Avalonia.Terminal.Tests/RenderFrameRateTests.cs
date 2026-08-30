@@ -1,5 +1,4 @@
 using Iciclecreek.Terminal;
-using NUnit.Framework;
 
 namespace Iciclecreek.Avalonia.Terminal.Tests;
 
@@ -12,7 +11,7 @@ namespace Iciclecreek.Avalonia.Terminal.Tests;
 /// <para>No Avalonia here. The property is arithmetic and validation; the coordinated frame it feeds needs a
 /// UI thread that these assertions do not.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class RenderFrameRateTests
 {
     private int _original;
@@ -20,49 +19,52 @@ public class RenderFrameRateTests
     // Captured and put back rather than left wherever a test happened to leave it. A stray rate would not
     // fail anything downstream, it would quietly change the cadence the rest of the suite renders at, which
     // is the worse outcome of the two.
-    [SetUp]
+    [TestInitialize]
     public void CaptureOriginal() => _original = TerminalRenderThrottle.TargetFrameRate;
 
-    [TearDown]
+    [TestCleanup]
     public void RestoreOriginal() => TerminalRenderThrottle.TargetFrameRate = _original;
 
-    [Test]
+    [TestMethod]
     public void Defaults_To_Thirty_Frames_Per_Second()
     {
-        Assert.That(_original, Is.EqualTo(30));
+        _original.Should().Be(30);
     }
 
-    [TestCase(1)]
-    [TestCase(30)]
-    [TestCase(60)]
-    [TestCase(1000)]
+    [TestMethod]
+
+    [DataRow(1)]
+    [DataRow(30)]
+    [DataRow(60)]
+    [DataRow(1000)]
     public void Accepts_A_Rate_Inside_The_Range(int framesPerSecond)
     {
         TerminalRenderThrottle.TargetFrameRate = framesPerSecond;
 
-        Assert.That(TerminalRenderThrottle.TargetFrameRate, Is.EqualTo(framesPerSecond));
+        TerminalRenderThrottle.TargetFrameRate.Should().Be(framesPerSecond);
     }
 
     // Zero is the case the range exists for. It divides into an infinite interval — not a duration any frame
     // can be scheduled from — and it would fail deep inside ScheduleFrame on the PTY read thread rather than
     // at the assignment the host actually got wrong. A negative rate is quieter and no better: it yields a
     // negative interval, which compares as already elapsed and defeats the throttle completely.
-    [TestCase(0)]
-    [TestCase(-1)]
-    [TestCase(1001)]
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(-1)]
+    [DataRow(1001)]
     public void Rejects_A_Rate_Outside_The_Range(int framesPerSecond)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(
             () => TerminalRenderThrottle.TargetFrameRate = framesPerSecond);
     }
 
-    [Test]
+    [TestMethod]
     public void A_Rejected_Rate_Leaves_The_Previous_One_In_Place()
     {
         TerminalRenderThrottle.TargetFrameRate = 45;
 
-        Assert.Throws<ArgumentOutOfRangeException>(() => TerminalRenderThrottle.TargetFrameRate = 0);
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => TerminalRenderThrottle.TargetFrameRate = 0);
 
-        Assert.That(TerminalRenderThrottle.TargetFrameRate, Is.EqualTo(45));
+        TerminalRenderThrottle.TargetFrameRate.Should().Be(45);
     }
 }

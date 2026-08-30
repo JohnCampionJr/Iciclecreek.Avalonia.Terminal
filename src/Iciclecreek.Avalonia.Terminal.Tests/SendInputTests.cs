@@ -1,7 +1,5 @@
 using System.Runtime.InteropServices;
 using System.Text;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -16,7 +14,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>The round-trip test below is the one that matters: it launches a real shell, sends a command, and
 /// waits for the shell's own output to come back. It runs on CI, since CI is Linux.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class SendInputTests
 {
     private static bool Posix => !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -41,7 +39,7 @@ public class SendInputTests
     [AvaloniaTest]
     public async Task Input_reaches_the_shell_and_the_command_runs()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var control = new TerminalControl { Process = "" };
         var window = TerminalHost.Show(control);
@@ -66,8 +64,7 @@ public class SendInputTests
                     break;
             }
 
-            Assert.That(CountOccurrences(seen, "mark-6f3a"), Is.GreaterThanOrEqualTo(2),
-                "the shell should have echoed the command and then printed its output. "
+            CountOccurrences(seen, "mark-6f3a").Should().BeGreaterThanOrEqualTo(2, "the shell should have echoed the command and then printed its output. "
                 + $"Occurrences seen: {CountOccurrences(seen, "mark-6f3a")}");
         }
         finally
@@ -103,7 +100,7 @@ public class SendInputTests
 
         try
         {
-            Assert.DoesNotThrowAsync(async () => await control.SendInputAsync("ls\r"));
+            ((Func<Task>)(async () => await control.SendInputAsync("ls\r"))).Should().NotThrowAsync().GetAwaiter().GetResult();
         }
         finally
         {
@@ -120,8 +117,7 @@ public class SendInputTests
     {
         var control = new TerminalControl { Process = "" };
 
-        Assert.DoesNotThrowAsync(async () => await control.SendInputAsync("ls\r"),
-            "a host can hold a control before it is realised; injecting text should not be the call that throws");
+        ((Func<Task>)(async () => await control.SendInputAsync("ls\r"))).Should().NotThrowAsync("a host can hold a control before it is realised; injecting text should not be the call that throws").GetAwaiter().GetResult();
     }
 
     /// <summary>The same, from the window, which is two forwarders deep.</summary>
@@ -130,7 +126,7 @@ public class SendInputTests
     {
         var window = new TerminalWindow { Process = "" };
 
-        Assert.DoesNotThrowAsync(async () => await window.SendInputAsync("ls\r"));
+        ((Func<Task>)(async () => await window.SendInputAsync("ls\r"))).Should().NotThrowAsync().GetAwaiter().GetResult();
     }
 
     /// <summary>Empty input is ignored rather than provoking a zero-byte write.</summary>
@@ -142,7 +138,7 @@ public class SendInputTests
 
         try
         {
-            Assert.DoesNotThrowAsync(async () => await control.SendInputAsync(string.Empty));
+            ((Func<Task>)(async () => await control.SendInputAsync(string.Empty))).Should().NotThrowAsync().GetAwaiter().GetResult();
         }
         finally
         {
@@ -158,7 +154,7 @@ public class SendInputTests
 
         try
         {
-            Assert.DoesNotThrowAsync(async () => await window.SendInputAsync("ls\r"));
+            ((Func<Task>)(async () => await window.SendInputAsync("ls\r"))).Should().NotThrowAsync().GetAwaiter().GetResult();
         }
         finally
         {

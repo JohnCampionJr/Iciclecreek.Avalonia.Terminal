@@ -1,7 +1,5 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// borrows the EFFECTIVE foreground — which makes the adjusted colour observable without asking
 /// Avalonia's compositor anything.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class MinimumContrastTests
 {
     private const string Esc = "\u001b";
@@ -32,9 +30,8 @@ public class MinimumContrastTests
         mc.SnapshotRatio(1);
 
         var murky = Color.FromRgb(40, 40, 40);
-        Assert.That(mc.Active, Is.False);
-        Assert.That(mc.Apply(murky, Colors.Black), Is.EqualTo(murky),
-            "ratio 1 is the default and must change nothing at all");
+        mc.Active.Should().BeFalse();
+        mc.Apply(murky, Colors.Black).Should().Be(murky, "ratio 1 is the default and must change nothing at all");
     }
 
     [AvaloniaTest]
@@ -48,8 +45,8 @@ public class MinimumContrastTests
 
         var ratio = MinimumContrast.ContrastRatio(
             MinimumContrast.Luminance(adjusted), MinimumContrast.Luminance(Colors.Black));
-        Assert.That(ratio, Is.GreaterThanOrEqualTo(4.5), "the floor is the contract");
-        Assert.That(adjusted, Is.Not.EqualTo(Color.FromRgb(40, 40, 40)));
+        ratio.Should().BeGreaterThanOrEqualTo(4.5, "the floor is the contract");
+        adjusted.Should().NotBe(Color.FromRgb(40, 40, 40));
     }
 
     [AvaloniaTest]
@@ -58,8 +55,7 @@ public class MinimumContrastTests
         var mc = new MinimumContrast();
         mc.SnapshotRatio(4.5);
 
-        Assert.That(mc.Apply(Colors.White, Colors.Black), Is.EqualTo(Colors.White),
-            "text that already clears the floor must come back byte-identical");
+        mc.Apply(Colors.White, Colors.Black).Should().Be(Colors.White, "text that already clears the floor must come back byte-identical");
     }
 
     [AvaloniaTest]
@@ -72,8 +68,8 @@ public class MinimumContrastTests
 
         var adjusted = mc.Apply(Color.FromRgb(80, 0, 0), Colors.Black);
 
-        Assert.That((int)adjusted.R, Is.GreaterThan(adjusted.G), "red should still lead");
-        Assert.That((int)adjusted.R, Is.GreaterThan(adjusted.B));
+        ((int)adjusted.R).Should().BeGreaterThan(adjusted.G, "red should still lead");
+        ((int)adjusted.R).Should().BeGreaterThan(adjusted.B);
     }
 
     [AvaloniaTest]
@@ -84,9 +80,7 @@ public class MinimumContrastTests
 
         var adjusted = mc.Apply(Color.FromRgb(0xDD, 0xDD, 0xDD), Colors.White);
 
-        Assert.That(MinimumContrast.Luminance(adjusted),
-            Is.LessThan(MinimumContrast.Luminance(Color.FromRgb(0xDD, 0xDD, 0xDD))),
-            "on a light background the readable direction is down");
+        MinimumContrast.Luminance(adjusted).Should().BeLessThan(MinimumContrast.Luminance(Color.FromRgb(0xDD, 0xDD, 0xDD)), "on a light background the readable direction is down");
     }
 
     [AvaloniaTest]
@@ -99,8 +93,7 @@ public class MinimumContrastTests
 
         var adjusted = mc.Apply(Color.FromRgb(100, 100, 100), Color.FromRgb(127, 127, 127));
 
-        Assert.That(adjusted == Colors.White || adjusted == Colors.Black, Is.True,
-            $"got {adjusted}; the endpoint is the only honest answer");
+        (adjusted == Colors.White || adjusted == Colors.Black).Should().BeTrue($"got {adjusted}; the endpoint is the only honest answer");
     }
 
     [AvaloniaTest]
@@ -115,17 +108,16 @@ public class MinimumContrastTests
         var translucent = Color.FromArgb(0x80, 40, 40, 40);
         var adjusted = mc.Apply(translucent, Colors.Black);
 
-        Assert.That(adjusted.A, Is.EqualTo(0x80), "the computed path must keep the alpha");
+        adjusted.A.Should().Be(0x80, "the computed path must keep the alpha");
 
         // And the CACHE must not alias the same RGB at a different alpha -- the second call is
         // the cache-hit path, which packed the colour separately from the first.
         var opaque = mc.Apply(Color.FromRgb(40, 40, 40), Colors.Black);
-        Assert.That(opaque.A, Is.EqualTo(255), "an opaque twin must not inherit the translucent answer");
-        Assert.That((opaque.R, opaque.G, opaque.B), Is.EqualTo((adjusted.R, adjusted.G, adjusted.B)),
-            "while the channels agree, because the contrast maths saw the same RGB");
+        opaque.A.Should().Be(255, "an opaque twin must not inherit the translucent answer");
+        (opaque.R, opaque.G, opaque.B).Should().Be((adjusted.R, adjusted.G, adjusted.B), "while the channels agree, because the contrast maths saw the same RGB");
 
         var translucentAgain = mc.Apply(translucent, Colors.Black);
-        Assert.That(translucentAgain, Is.EqualTo(adjusted), "and the cache-hit path returns alpha intact");
+        translucentAgain.Should().Be(adjusted, "and the cache-hit path returns alpha intact");
     }
 
     [AvaloniaTest]
@@ -137,15 +129,15 @@ public class MinimumContrastTests
         var mc = new MinimumContrast();
         mc.SnapshotRatio(4.5);
         mc.SnapshotRatio(double.NaN);
-        Assert.That(mc.Active, Is.False, "NaN is off, not 'whatever was set before'");
+        mc.Active.Should().BeFalse("NaN is off, not 'whatever was set before'");
 
         // Out-of-range values clamp to the 1..21 the model defines.
         mc.SnapshotRatio(500);
         var adjusted = mc.Apply(Color.FromRgb(100, 100, 100), Colors.Black);
-        Assert.That(adjusted, Is.EqualTo(Colors.White), "500 behaves as 21: black-on-white");
+        adjusted.Should().Be(Colors.White, "500 behaves as 21: black-on-white");
 
         mc.SnapshotRatio(-3);
-        Assert.That(mc.Active, Is.False, "below 1 clamps to 1, which is off");
+        mc.Active.Should().BeFalse("below 1 clamps to 1, which is off");
     }
 
     // --------------------------------------------------------- the exemption
@@ -155,16 +147,16 @@ public class MinimumContrastTests
     {
         // The xterm.js carve-out: box drawing, blocks, and Powerline arrows join into shapes
         // with their neighbours, and adjusting one cell of a shape breaks the joint.
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(MinimumContrast.IsExemptRun("─│┌┘"), Is.True, "box drawing");
-            Assert.That(MinimumContrast.IsExemptRun("█▓▒░"), Is.True, "block elements");
-            Assert.That(MinimumContrast.IsExemptRun("\uE0B0\uE0B2"), Is.True, "Powerline arrows");
-            Assert.That(MinimumContrast.IsExemptRun(" ─ "), Is.True, "blanks between them do not un-exempt");
-            Assert.That(MinimumContrast.IsExemptRun("a"), Is.False, "text is the point of the feature");
-            Assert.That(MinimumContrast.IsExemptRun("a─"), Is.False, "a mixed run is adjusted for its text");
-            Assert.That(MinimumContrast.IsExemptRun(""), Is.False);
-        });
+            MinimumContrast.IsExemptRun("─│┌┘").Should().BeTrue("box drawing");
+            MinimumContrast.IsExemptRun("█▓▒░").Should().BeTrue("block elements");
+            MinimumContrast.IsExemptRun("\uE0B0\uE0B2").Should().BeTrue("Powerline arrows");
+            MinimumContrast.IsExemptRun(" ─ ").Should().BeTrue("blanks between them do not un-exempt");
+            MinimumContrast.IsExemptRun("a").Should().BeFalse("text is the point of the feature");
+            MinimumContrast.IsExemptRun("a─").Should().BeFalse("a mixed run is adjusted for its text");
+            MinimumContrast.IsExemptRun("").Should().BeFalse();
+        };
     }
 
     // ----------------------------------------------------------- the wiring
@@ -187,10 +179,10 @@ public class MinimumContrastTests
         }
 
         var line = view.Terminal.Buffer.Lines[view.Terminal.Buffer.ViewportY];
-        Assert.That(line, Is.Not.Null);
+        line.Should().NotBeNull();
 
         var runs = line!.Cache as List<TerminalView.CachedTextRun>;
-        Assert.That(runs, Is.Not.Null, "the row produced no cached runs");
+        runs.Should().NotBeNull("the row produced no cached runs");
         return runs!;
     }
 
@@ -201,7 +193,7 @@ public class MinimumContrastTests
     private static Color EffectiveForeground(TerminalView view)
     {
         var run = RunsForFirstRow(view).First(r => r.UnderlineStyle != XTerm.Common.UnderlineStyle.None);
-        Assert.That(run.UnderlineBrush, Is.Not.Null);
+        run.UnderlineBrush.Should().NotBeNull();
         return ((ISolidColorBrush)run.UnderlineBrush!).Color;
     }
 
@@ -220,8 +212,7 @@ public class MinimumContrastTests
 
             var ratio = MinimumContrast.ContrastRatio(
                 MinimumContrast.Luminance(fg), MinimumContrast.Luminance(bgColor));
-            Assert.That(ratio, Is.GreaterThanOrEqualTo(4.5),
-                "the option must reach the paint, not stop at the emulator");
+            ratio.Should().BeGreaterThanOrEqualTo(4.5, "the option must reach the paint, not stop at the emulator");
         }
         finally { window.Close(); }
     }
@@ -236,8 +227,7 @@ public class MinimumContrastTests
         {
             view.Terminal.Write($"{Esc}[4;38;2;40;40;40mabc");
 
-            Assert.That(EffectiveForeground(view), Is.EqualTo(Color.FromRgb(40, 40, 40)),
-                "ratio 1 means off, and off means exactly the colour the program asked for");
+            EffectiveForeground(view).Should().Be(Color.FromRgb(40, 40, 40), "ratio 1 means off, and off means exactly the colour the program asked for");
         }
         finally { window.Close(); }
     }
@@ -251,8 +241,7 @@ public class MinimumContrastTests
             view.Terminal.Options.MinimumContrastRatio = 4.5;
             view.Terminal.Write($"{Esc}[4;38;2;40;40;40m───");
 
-            Assert.That(EffectiveForeground(view), Is.EqualTo(Color.FromRgb(40, 40, 40)),
-                "a border's job is to match the panel it joins, not to be read");
+            EffectiveForeground(view).Should().Be(Color.FromRgb(40, 40, 40), "a border's job is to match the panel it joins, not to be read");
         }
         finally { window.Close(); }
     }
@@ -269,12 +258,9 @@ public class MinimumContrastTests
             var runs = RunsForFirstRow(view);
             var run = runs.First(r => r.UnderlineStyle != XTerm.Common.UnderlineStyle.None);
 
-            Assert.That(run.Background, Is.Not.Null, "the cell declared a background, so it paints one");
-            Assert.That(((ISolidColorBrush)run.Background!).Color, Is.EqualTo(Color.FromRgb(10, 10, 10)),
-                "the background is the theme's and stays put");
-            Assert.That(((ISolidColorBrush)run.UnderlineBrush!).Color,
-                Is.Not.EqualTo(Color.FromRgb(40, 40, 40)),
-                "while the unreadable foreground over it was adjusted");
+            run.Background.Should().NotBeNull("the cell declared a background, so it paints one");
+            (((ISolidColorBrush)run.Background!).Color).Should().Be(Color.FromRgb(10, 10, 10), "the background is the theme's and stays put");
+            (((ISolidColorBrush)run.UnderlineBrush!).Color).Should().NotBe(Color.FromRgb(40, 40, 40), "while the unreadable foreground over it was adjusted");
         }
         finally { window.Close(); }
     }

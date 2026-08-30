@@ -1,9 +1,7 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Iciclecreek.Avalonia.Terminal;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -19,7 +17,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// is under test is the resolution, and a pixel test would be answering a question about Avalonia's
 /// compositor instead.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class ColorResolutionTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -41,7 +39,7 @@ public class ColorResolutionTests
         Dispatcher.UIThread.RunJobs();
 
         var line = view.Terminal.Buffer.GetLine(view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y);
-        Assert.That(line, Is.Not.Null, "the write produced no line");
+        line.Should().NotBeNull("the write produced no line");
         return (line![0], view.Terminal.Colors.Take());
     }
 
@@ -65,8 +63,7 @@ public class ColorResolutionTests
             var (cell, palette) = FirstCell(view, $"{Esc}[1;31mX");
 
             var expected = Rgb(palette[9]);
-            Assert.That(cell.GetForegroundColor(palette), Is.EqualTo(expected),
-                "bold red is palette 9, whatever the theme has put there");
+            cell.GetForegroundColor(palette).Should().Be(expected, "bold red is palette 9, whatever the theme has put there");
         }
         finally { window.Close(); }
     }
@@ -82,8 +79,7 @@ public class ColorResolutionTests
         {
             var (cell, palette) = FirstCell(view, $"{Esc}[1;38;2;139;0;0mX");
 
-            Assert.That(cell.GetForegroundColor(palette), Is.EqualTo(Color.FromRgb(139, 0, 0)),
-                "a 24-bit colour has no bright counterpart to select, so bold changes nothing about it");
+            cell.GetForegroundColor(palette).Should().Be(Color.FromRgb(139, 0, 0), "a 24-bit colour has no bright counterpart to select, so bold changes nothing about it");
         }
         finally { window.Close(); }
     }
@@ -98,8 +94,7 @@ public class ColorResolutionTests
         {
             var (cell, palette) = FirstCell(view, $"{Esc}[1;38;5;100mX");
 
-            Assert.That(cell.GetForegroundColor(palette),
-                Is.EqualTo(Rgb(palette[100])));
+            cell.GetForegroundColor(palette).Should().Be(Rgb(palette[100]));
         }
         finally { window.Close(); }
     }
@@ -114,9 +109,7 @@ public class ColorResolutionTests
         {
             var (cell, palette) = FirstCell(view, $"{Esc}[1;31mX");
 
-            Assert.That(cell.GetForegroundColor(palette, boldIsBright: false),
-                Is.EqualTo(Rgb(palette[1])),
-                "with the option off, bold red stays palette 1");
+            cell.GetForegroundColor(palette, boldIsBright: false).Should().Be(Rgb(palette[1]), "with the option off, bold red stays palette 1");
         }
         finally { window.Close(); }
     }
@@ -134,9 +127,8 @@ public class ColorResolutionTests
             var (cell, palette) = FirstCell(view, $"{Esc}[2;31mX");
             var brush = cell.GetForegroundBrush(palette, Brushes.White);
 
-            Assert.That(Of(brush), Is.EqualTo(Rgb(palette[1])),
-                "the channels must be left alone -- dim lives in the opacity");
-            Assert.That(OpacityOf(brush), Is.LessThan(1.0), "and the opacity must actually carry it");
+            Of(brush).Should().Be(Rgb(palette[1]), "the channels must be left alone -- dim lives in the opacity");
+            OpacityOf(brush).Should().BeLessThan(1.0, "and the opacity must actually carry it");
         }
         finally { window.Close(); }
     }
@@ -153,8 +145,7 @@ public class ColorResolutionTests
             var (cell, palette) = FirstCell(view, $"{Esc}[2mX");
             var brush = cell.GetForegroundBrush(palette, Brushes.White);
 
-            Assert.That(OpacityOf(brush), Is.LessThan(1.0),
-                "dim with no colour set is the commonest way to use it");
+            OpacityOf(brush).Should().BeLessThan(1.0, "dim with no colour set is the commonest way to use it");
         }
         finally { window.Close(); }
     }
@@ -167,7 +158,7 @@ public class ColorResolutionTests
         {
             var (cell, palette) = FirstCell(view, $"{Esc}[31mX");
 
-            Assert.That(OpacityOf(cell.GetForegroundBrush(palette, Brushes.White)), Is.EqualTo(1.0));
+            OpacityOf(cell.GetForegroundBrush(palette, Brushes.White)).Should().Be(1.0);
         }
         finally { window.Close(); }
     }
@@ -189,8 +180,7 @@ public class ColorResolutionTests
             var (cell, palette) = FirstCell(view, "X");
             var brush = cell.GetBackgroundBrush(palette, Brushes.Black);
 
-            Assert.That(Of(brush), Is.EqualTo(Color.FromRgb(0x11, 0x22, 0x33)),
-                "a program that set its own default background must get it back when it inverts");
+            Of(brush).Should().Be(Color.FromRgb(0x11, 0x22, 0x33), "a program that set its own default background must get it back when it inverts");
         }
         finally { window.Close(); }
     }
@@ -207,13 +197,13 @@ public class ColorResolutionTests
         {
             var (cell, palette) = FirstCell(view, "X");
             var byAlpha = new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0));
-            Assert.That(cell.GetBackgroundBrush(palette, byAlpha), Is.SameAs(byAlpha));
+            cell.GetBackgroundBrush(palette, byAlpha).Should().BeSameAs(byAlpha);
 
             // The OTHER way to be translucent, and independent of the first: a host that writes
             // Opacity = 0.8 on an opaque colour is asking for exactly the same thing, and only the
             // alpha form was being honoured.
             var byOpacity = new SolidColorBrush(Colors.Black) { Opacity = 0.8 };
-            Assert.That(cell.GetBackgroundBrush(palette, byOpacity), Is.SameAs(byOpacity));
+            cell.GetBackgroundBrush(palette, byOpacity).Should().BeSameAs(byOpacity);
         }
         finally { window.Close(); }
     }
@@ -229,8 +219,7 @@ public class ColorResolutionTests
         {
             var (cell, palette) = FirstCell(view, "X");
 
-            Assert.That(cell.GetBackgroundColor(palette), Is.Null,
-                "resolving the brush must not have turned every cell into one that paints");
+            cell.GetBackgroundColor(palette).Should().BeNull("resolving the brush must not have turned every cell into one that paints");
         }
         finally { window.Close(); }
     }

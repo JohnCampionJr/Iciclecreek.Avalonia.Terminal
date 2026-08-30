@@ -1,8 +1,6 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Media;
 using Iciclecreek.Avalonia.Terminal;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -14,7 +12,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// separate one in its palette, and neither knew about the other: a program could set a colour, have the
 /// emulator accept it, and see nothing change — the renderer was reading a different table entirely.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class DefaultColorTests
 {
     private const string Esc = "";
@@ -41,7 +39,7 @@ public class DefaultColorTests
         var cell = view.Terminal.Buffer.Lines[0]![0];
         var brush = cell.GetForegroundBrush(view.Terminal.Colors.Take(), view.Foreground);
 
-        Assert.That((brush as ISolidColorBrush)?.Color, Is.EqualTo(Color.FromRgb(0x11, 0x22, 0x33)));
+        ((brush as ISolidColorBrush)?.Color).Should().Be(Color.FromRgb(0x11, 0x22, 0x33));
 
         window.Close();
     }
@@ -61,8 +59,7 @@ public class DefaultColorTests
         var cell = view.Terminal.Buffer.Lines[0]![0];
         var brush = cell.GetForegroundBrush(view.Terminal.Colors.Take(), view.Foreground);
 
-        Assert.That((brush as ISolidColorBrush)?.Color, Is.EqualTo(Colors.Red),
-            "the program set the default foreground and the renderer kept painting the old one");
+        ((brush as ISolidColorBrush)?.Color).Should().Be(Colors.Red, "the program set the default foreground and the renderer kept painting the old one");
 
         window.Close();
     }
@@ -78,12 +75,11 @@ public class DefaultColorTests
         var (view, window) = Realised(Colors.White, Color.FromRgb(0x20, 0x20, 0x20));
 
         view.Terminal.Write($"{Esc}]11;#FF00FF{Esc}\\");
-        Assert.That(view.Terminal.Colors.Background, Is.EqualTo(0xFF00FF), "sanity: the program moved it");
+        view.Terminal.Colors.Background.Should().Be(0xFF00FF, "sanity: the program moved it");
 
         view.Terminal.Write($"{Esc}]111{Esc}\\");
 
-        Assert.That(view.Terminal.Colors.Background, Is.EqualTo(0x202020),
-            "reset landed on a colour the host never chose");
+        view.Terminal.Colors.Background.Should().Be(0x202020, "reset landed on a colour the host never chose");
 
         window.Close();
     }
@@ -103,8 +99,7 @@ public class DefaultColorTests
         var cell = view.Terminal.Buffer.Lines[0]![0];
         var brush = cell.GetForegroundBrush(view.Terminal.Colors.Take(), view.Foreground);
 
-        Assert.That((brush as ISolidColorBrush)?.Color, Is.EqualTo(Colors.Lime),
-            "the renderer resolved colour 1 against its own table instead of the emulator's palette");
+        ((brush as ISolidColorBrush)?.Color).Should().Be(Colors.Lime, "the renderer resolved colour 1 against its own table instead of the emulator's palette");
 
         window.Close();
     }
@@ -118,8 +113,8 @@ public class DefaultColorTests
     {
         var (view, window) = Realised(Colors.Black, Colors.White);
 
-        Assert.That(view.Terminal.Colors.IsLightBackground, Is.True);
-        Assert.That(view.Terminal.Colors.Background, Is.EqualTo(0xFFFFFF));
+        view.Terminal.Colors.IsLightBackground.Should().BeTrue();
+        view.Terminal.Colors.Background.Should().Be(0xFFFFFF);
 
         window.Close();
     }

@@ -1,7 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -11,7 +9,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>No interactive shell binds ESC[1;2C, so what the emulator would otherwise send comes back as the
 /// literal text ";2C" in the command line — the same failure as the word-motion keys, one modifier over.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ShiftSelectionTests
 {
     private const string Esc = "\u001b";
@@ -25,7 +23,7 @@ public class ShiftSelectionTests
         var pty = new RecordingConnection();
         view.AttachConnection(pty);
         view.Focus();
-        Assert.That(view.IsFocused, Is.True, "sanity: OnKeyDown returns early without focus");
+        view.IsFocused.Should().BeTrue("sanity: OnKeyDown returns early without focus");
         return (view, pty, window);
     }
 
@@ -50,10 +48,9 @@ public class ShiftSelectionTests
         Press(view, Key.Left, KeyModifiers.Shift);
         await Task.Delay(60);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "a selection started");
-        Assert.That(pty.Written, Is.Empty, "and nothing was sent to the shell");
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("o"),
-            "exactly one cell, not two");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("a selection started");
+        pty.Written.Should().BeEmpty("and nothing was sent to the shell");
+        view.Terminal.Selection.GetSelectionText().Should().Be("o", "exactly one cell, not two");
 
         window.Close();
     }
@@ -69,12 +66,12 @@ public class ShiftSelectionTests
 
         Press(view, Key.Left, KeyModifiers.Shift);
         await Task.Delay(40);
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity: something is selected");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("sanity: something is selected");
 
         Press(view, Key.Right, KeyModifiers.Shift);
         await Task.Delay(40);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "back at the anchor means no selection");
+        view.Terminal.Selection.HasSelection.Should().BeFalse("back at the anchor means no selection");
         window.Close();
     }
 
@@ -82,19 +79,19 @@ public class ShiftSelectionTests
     /// The point of the change: these keys must not reach the shell. Previously each sent a modified-cursor
     /// sequence that no default keymap binds, so zsh echoed its tail into the command line.
     /// </summary>
-    [TestCase(Key.Left)]
-    [TestCase(Key.Right)]
-    [TestCase(Key.Up)]
-    [TestCase(Key.Down)]
-    [TestCase(Key.Home)]
-    [TestCase(Key.End)]
+    [DataRow(Key.Left)]
+    [DataRow(Key.Right)]
+    [DataRow(Key.Up)]
+    [DataRow(Key.Down)]
+    [DataRow(Key.Home)]
+    [DataRow(Key.End)]
     [AvaloniaTest]
     public async Task Shift_navigation_is_not_sent_to_the_shell(Key key)
     {
         var (view, pty, window) = LiveView();
         Press(view, key, KeyModifiers.Shift);
         await Task.Delay(60);
-        Assert.That(pty.Written, Is.Empty, $"Shift+{key} extends a selection; it is not shell input");
+        pty.Written.Should().BeEmpty($"Shift+{key} extends a selection; it is not shell input");
         window.Close();
     }
 
@@ -109,13 +106,13 @@ public class ShiftSelectionTests
 
         view.Terminal.Write("\u001b[?1049h");     // switch to the alternate buffer
         await Task.Delay(60);
-        Assert.That(view.Terminal.IsAlternateBufferActive, Is.True, "sanity: in the alternate buffer");
+        view.Terminal.IsAlternateBufferActive.Should().BeTrue("sanity: in the alternate buffer");
 
         Press(view, Key.Right, KeyModifiers.Shift);
         await Task.Delay(60);
 
-        Assert.That(pty.Written, Is.Not.Empty, "a full-screen app reads the real sequence itself");
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "and no buffer selection was made");
+        pty.Written.Should().NotBeEmpty("a full-screen app reads the real sequence itself");
+        view.Terminal.Selection.HasSelection.Should().BeFalse("and no buffer selection was made");
 
         window.Close();
     }
@@ -131,12 +128,12 @@ public class ShiftSelectionTests
 
         Press(view, Key.Left, KeyModifiers.Shift);
         await Task.Delay(40);
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("sanity");
 
         Press(view, Key.A);
         await Task.Delay(40);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "typing clears it");
+        view.Terminal.Selection.HasSelection.Should().BeFalse("typing clears it");
         window.Close();
     }
 
@@ -163,10 +160,9 @@ public class ShiftSelectionTests
         Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(60);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "the selection must survive");
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"),
-            "one word back from the cursor");
-        Assert.That(pty.Written, Is.Empty, "and nothing reaches the shell");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("the selection must survive");
+        view.Terminal.Selection.GetSelectionText().Should().Be("world", "one word back from the cursor");
+        pty.Written.Should().BeEmpty("and nothing reaches the shell");
 
         window.Close();
     }
@@ -190,16 +186,14 @@ public class ShiftSelectionTests
         Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(60);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("bar"),
-            "the hyphen ends the word, as it does for double-click");
+        view.Terminal.Selection.GetSelectionText().Should().Be("bar", "the hyphen ends the word, as it does for double-click");
 
         // The other half of the claim: the mouse gesture, over the same text, agrees.
         view.Terminal.Selection.ClearSelection();
         view.Terminal.Selection.StartSelection(5, 0, XTerm.Selection.SelectionMode.Word);
         view.Terminal.Selection.EndSelection();
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("bar"),
-            "sanity: this is the definition being matched, not a coincidence");
+        view.Terminal.Selection.GetSelectionText().Should().Be("bar", "sanity: this is the definition being matched, not a coincidence");
 
         window.Close();
     }
@@ -217,7 +211,7 @@ public class ShiftSelectionTests
         Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(40);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"));
+        view.Terminal.Selection.GetSelectionText().Should().Be("hello world");
         window.Close();
     }
 
@@ -231,12 +225,12 @@ public class ShiftSelectionTests
 
         Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(40);
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+        view.Terminal.Selection.GetSelectionText().Should().Be("world", "sanity");
 
         Press(view, Key.Right, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(40);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "back at the anchor clears it");
+        view.Terminal.Selection.HasSelection.Should().BeFalse("back at the anchor clears it");
         window.Close();
     }
 
@@ -251,8 +245,8 @@ public class ShiftSelectionTests
         Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
         await Task.Delay(60);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"));
-        Assert.That(pty.Written, Is.Empty);
+        view.Terminal.Selection.GetSelectionText().Should().Be("world");
+        pty.Written.Should().BeEmpty();
         window.Close();
     }
 
@@ -261,8 +255,8 @@ public class ShiftSelectionTests
     /// belongs to Mission Control, so Ctrl+Shift+arrow never reaches the app. Both are accepted so the same
     /// binding works everywhere.
     /// </summary>
-    [TestCase(Key.Left, "world")]
-    [TestCase(Key.Right, "")]
+    [DataRow(Key.Left, "world")]
+    [DataRow(Key.Right, "")]
     [AvaloniaTest]
     public async Task Option_shift_is_the_mac_gesture(Key key, string expected)
     {
@@ -273,8 +267,8 @@ public class ShiftSelectionTests
         Press(view, key, KeyModifiers.Alt | KeyModifiers.Shift);
         await Task.Delay(60);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText() ?? "", Is.EqualTo(expected));
-        Assert.That(pty.Written, Is.Empty, "a selection gesture is not shell input");
+        (view.Terminal.Selection.GetSelectionText() ?? "").Should().Be(expected);
+        pty.Written.Should().BeEmpty("a selection gesture is not shell input");
         window.Close();
     }
 
@@ -282,8 +276,8 @@ public class ShiftSelectionTests
     /// Bare Option+arrow keeps meaning word-motion IN the shell, unchanged from #49. Pinned here because the
     /// selection gesture claims Option+SHIFT, one modifier away — it must not swallow this one.
     /// </summary>
-    [TestCase(Key.Left, "b")]
-    [TestCase(Key.Right, "f")]
+    [DataRow(Key.Left, "b")]
+    [DataRow(Key.Right, "f")]
     [AvaloniaTest]
     public async Task Bare_option_arrow_still_moves_the_shell_cursor(Key key, string letter)
     {
@@ -294,16 +288,16 @@ public class ShiftSelectionTests
         Press(view, key, KeyModifiers.Alt);
         await Task.Delay(60);
 
-        Assert.That(pty.Written, Is.EqualTo(Esc + letter), "still ESC-b / ESC-f to the shell");
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "and no selection is made");
+        pty.Written.Should().Be(Esc + letter, "still ESC-b / ESC-f to the shell");
+        view.Terminal.Selection.HasSelection.Should().BeFalse("and no selection is made");
         window.Close();
     }
 
     /// <summary>
     /// Ctrl+arrow the same way, for a shell reading VT sequences.
     /// </summary>
-    [TestCase(Key.Left, "b")]
-    [TestCase(Key.Right, "f")]
+    [DataRow(Key.Left, "b")]
+    [DataRow(Key.Right, "f")]
     [AvaloniaTest]
     public async Task Bare_ctrl_arrow_moves_the_shell_cursor_by_a_word(Key key, string letter)
     {
@@ -314,8 +308,8 @@ public class ShiftSelectionTests
         Press(view, key, KeyModifiers.Control);
         await Task.Delay(60);
 
-        Assert.That(pty.Written, Is.EqualTo(Esc + letter));
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False);
+        pty.Written.Should().Be(Esc + letter);
+        view.Terminal.Selection.HasSelection.Should().BeFalse();
         window.Close();
     }
 
@@ -330,30 +324,30 @@ public class ShiftSelectionTests
     /// <para>Asserted as "not the translation" rather than against an exact Win32 record, because the record
     /// encodes scan codes and repeat counts that are not this test's business.</para>
     /// </remarks>
-    [TestCase(Key.Left)]
-    [TestCase(Key.Right)]
+    [DataRow(Key.Left)]
+    [DataRow(Key.Right)]
     [AvaloniaTest]
     public async Task Ctrl_arrow_is_not_translated_under_win32_input_mode(Key key)
     {
         var (view, pty, window) = LiveView();
         view.Terminal.Write(Esc + "[?9001h");      // what cmd.exe sends on startup
         await Task.Delay(60);
-        Assert.That(view.Terminal.Win32InputMode, Is.True, "sanity: the mode is on");
+        view.Terminal.Win32InputMode.Should().BeTrue("sanity: the mode is on");
 
         Press(view, key, KeyModifiers.Control);
         await Task.Delay(60);
 
-        Assert.That(pty.Written, Is.Not.Empty, "the keystroke still has to reach the process");
-        Assert.That(pty.Written, Is.Not.EqualTo(Esc + "b"), "ESC-b is a binding cmd.exe does not have");
-        Assert.That(pty.Written, Is.Not.EqualTo(Esc + "f"));
-        Assert.That(pty.Written, Does.EndWith("_"), "a Win32 input record, which it does understand");
+        pty.Written.Should().NotBeEmpty("the keystroke still has to reach the process");
+        pty.Written.Should().NotBe(Esc + "b", "ESC-b is a binding cmd.exe does not have");
+        pty.Written.Should().NotBe(Esc + "f");
+        pty.Written.Should().EndWith("_", "a Win32 input record, which it does understand");
 
         window.Close();
     }
 
     /// <summary>Same for bare Ctrl+arrow, which is the gesture on Windows and Linux.</summary>
-    [TestCase(Key.Left, "b")]
-    [TestCase(Key.Right, "f")]
+    [DataRow(Key.Left, "b")]
+    [DataRow(Key.Right, "f")]
     [AvaloniaTest]
     public async Task Bare_ctrl_arrow_still_moves_the_shell_cursor(Key key, string letter)
     {
@@ -364,8 +358,8 @@ public class ShiftSelectionTests
         Press(view, key, KeyModifiers.Control);
         await Task.Delay(60);
 
-        Assert.That(pty.Written, Is.EqualTo(Esc + letter));
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False);
+        pty.Written.Should().Be(Esc + letter);
+        view.Terminal.Selection.HasSelection.Should().BeFalse();
         window.Close();
     }
 
@@ -375,8 +369,8 @@ public class ShiftSelectionTests
         .IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX);
 
     /// <summary>Shift+Home / Shift+End select to the line edge — the Windows and Linux gesture.</summary>
-    [TestCase(Key.Home, "hello world")]
-    [TestCase(Key.End, "")]
+    [DataRow(Key.Home, "hello world")]
+    [DataRow(Key.End, "")]
     [AvaloniaTest]
     public async Task Shift_home_and_end_select_to_the_line_edge(Key key, string expected)
     {
@@ -387,8 +381,8 @@ public class ShiftSelectionTests
         Press(view, key, KeyModifiers.Shift);
         await Task.Delay(60);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText() ?? "", Is.EqualTo(expected));
-        Assert.That(pty.Written, Is.Empty, "a selection gesture is not shell input");
+        (view.Terminal.Selection.GetSelectionText() ?? "").Should().Be(expected);
+        pty.Written.Should().BeEmpty("a selection gesture is not shell input");
         window.Close();
     }
 
@@ -396,12 +390,12 @@ public class ShiftSelectionTests
     /// A Mac keyboard has no Home/End, so Cmd+arrow is the platform's line-start/line-end — and until now it
     /// did nothing at all, swallowed by the Meta passthrough. It sends exactly what Home and End send.
     /// </summary>
-    [TestCase(Key.Left, "[H")]
-    [TestCase(Key.Right, "[F")]
+    [DataRow(Key.Left, "[H")]
+    [DataRow(Key.Right, "[F")]
     [AvaloniaTest]
     public async Task Cmd_arrow_is_the_mac_line_edge(Key key, string tail)
     {
-        if (!OnMac) Assert.Ignore("Cmd+arrow is a macOS gesture");
+        if (!OnMac) Assert.Inconclusive("Cmd+arrow is a macOS gesture");
 
         var (view, pty, window) = LiveView();
         Type(view, "hello world");
@@ -410,17 +404,17 @@ public class ShiftSelectionTests
         Press(view, key, KeyModifiers.Meta);
         await Task.Delay(60);
 
-        Assert.That(pty.Written, Is.EqualTo(Esc + tail), "the same sequence Home and End send");
+        pty.Written.Should().Be(Esc + tail, "the same sequence Home and End send");
         window.Close();
     }
 
     /// <summary>And with Shift held it selects to that edge, like Shift+Home / Shift+End.</summary>
-    [TestCase(Key.Left, "hello world")]
-    [TestCase(Key.Right, "")]
+    [DataRow(Key.Left, "hello world")]
+    [DataRow(Key.Right, "")]
     [AvaloniaTest]
     public async Task Cmd_shift_arrow_selects_to_the_mac_line_edge(Key key, string expected)
     {
-        if (!OnMac) Assert.Ignore("Cmd+Shift+arrow is a macOS gesture");
+        if (!OnMac) Assert.Inconclusive("Cmd+Shift+arrow is a macOS gesture");
 
         var (view, pty, window) = LiveView();
         Type(view, "hello world");
@@ -429,8 +423,8 @@ public class ShiftSelectionTests
         Press(view, key, KeyModifiers.Meta | KeyModifiers.Shift);
         await Task.Delay(60);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText() ?? "", Is.EqualTo(expected));
-        Assert.That(pty.Written, Is.Empty, "a selection gesture is not shell input");
+        (view.Terminal.Selection.GetSelectionText() ?? "").Should().Be(expected);
+        pty.Written.Should().BeEmpty("a selection gesture is not shell input");
         window.Close();
     }
 
@@ -449,9 +443,8 @@ public class ShiftSelectionTests
         Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(40);
 
-        Assert.That(view.CaretPosition, Is.Not.EqualTo(atCursor), "it moved with the selection");
-        Assert.That(view.CaretPosition.Column, Is.EqualTo(atCursor.Column - "world".Length),
-            "to the start of the selected word");
+        view.CaretPosition.Should().NotBe(atCursor, "it moved with the selection");
+        view.CaretPosition.Column.Should().Be(atCursor.Column - "world".Length, "to the start of the selected word");
 
         window.Close();
     }
@@ -470,7 +463,7 @@ public class ShiftSelectionTests
 
         Press(view, Key.End, KeyModifiers.Shift);
         await Task.Delay(40);
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "sanity: nothing was selected");
+        view.Terminal.Selection.HasSelection.Should().BeFalse("sanity: nothing was selected");
 
         Press(view, Key.X);
         await Task.Delay(40);
@@ -479,9 +472,8 @@ public class ShiftSelectionTests
         Type(view, "world");
         await Task.Delay(60);
 
-        Assert.That(view.CaretPosition, Is.EqualTo((view.Terminal.Buffer.X,
-                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y)),
-            "the caret is back on the shell's cursor, not pinned to the retired gesture");
+        view.CaretPosition.Should().Be((view.Terminal.Buffer.X,
+                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y), "the caret is back on the shell's cursor, not pinned to the retired gesture");
 
         window.Close();
     }
@@ -498,13 +490,13 @@ public class ShiftSelectionTests
         await Task.Delay(40);
         Press(view, Key.Right, KeyModifiers.Shift);
         await Task.Delay(40);
-        Assert.That(view.Terminal.Selection.HasSelection, Is.False, "sanity: collapsed");
+        view.Terminal.Selection.HasSelection.Should().BeFalse("sanity: collapsed");
 
         Type(view, "world");
         await Task.Delay(60);
 
-        Assert.That(view.CaretPosition, Is.EqualTo((view.Terminal.Buffer.X,
-                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y)));
+        view.CaretPosition.Should().Be((view.Terminal.Buffer.X,
+                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y));
         window.Close();
     }
 
@@ -543,7 +535,7 @@ public class ShiftSelectionTests
     /// line — the shell owns it — so the selection becomes the keystrokes that would have removed it.
     /// </summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Typing_over_a_backwards_selection_replaces_it()
     {
         var (view, window) = await RealShell();
@@ -552,19 +544,18 @@ public class ShiftSelectionTests
 
             TypeText(view, "hello world");
             await Task.Delay(700);
-            Assert.That(CursorRow(view), Does.EndWith("hello world"), "sanity");
+            CursorRow(view).Should().EndWith("hello world", "sanity");
 
             Press(view, Key.Left, KeyModifiers.Shift);
             Press(view, Key.Left, KeyModifiers.Shift);
             Press(view, Key.Left, KeyModifiers.Shift);
             await Task.Delay(300);
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity: selected the tail");
+            view.Terminal.Selection.GetSelectionText().Should().Be("rld", "sanity: selected the tail");
 
             TypeText(view, "Z");
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("hello woZ"),
-                "the selected text is gone and the typed character took its place");
+            CursorRow(view).Should().EndWith("hello woZ", "the selected text is gone and the typed character took its place");
 
         }
         finally
@@ -576,7 +567,7 @@ public class ShiftSelectionTests
 
     /// <summary>A word-wise selection replaces the same way.</summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Typing_over_a_word_selection_replaces_it()
     {
         var (view, window) = await RealShell();
@@ -588,12 +579,12 @@ public class ShiftSelectionTests
 
             Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
             await Task.Delay(300);
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+            view.Terminal.Selection.GetSelectionText().Should().Be("world", "sanity");
 
             TypeText(view, "there");
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("hello there"));
+            CursorRow(view).Should().EndWith("hello there");
 
         }
         finally
@@ -609,7 +600,7 @@ public class ShiftSelectionTests
     /// covering it could not be replaced.
     /// </summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task A_selection_stops_at_the_prompt_edge()
     {
         var (view, window) = await RealShell();
@@ -619,13 +610,12 @@ public class ShiftSelectionTests
             TypeText(view, "hello world");
             await Task.Delay(700);
             var row = CursorRow(view);
-            Assert.That(row, Does.Contain("$ hello world"), "sanity: there is a prompt in front of the input");
+            row.Should().Contain("$ hello world", "sanity: there is a prompt in front of the input");
 
             Press(view, Key.Home, KeyModifiers.Shift);
             await Task.Delay(300);
 
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
-                "the input, and none of the prompt");
+            view.Terminal.Selection.GetSelectionText().Should().Be("hello world", "the input, and none of the prompt");
 
         }
         finally
@@ -637,7 +627,7 @@ public class ShiftSelectionTests
 
     /// <summary>Word-wise too: walking left word by word stops at the same edge.</summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Word_selection_stops_at_the_prompt_edge()
     {
         var (view, window) = await RealShell();
@@ -653,8 +643,7 @@ public class ShiftSelectionTests
                 await Task.Delay(80);
             }
 
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hello world"),
-                "it stops at the input, however many times the chord is pressed");
+            view.Terminal.Selection.GetSelectionText().Should().Be("hello world", "it stops at the input, however many times the chord is pressed");
 
         }
         finally
@@ -668,10 +657,10 @@ public class ShiftSelectionTests
     /// Backspace and Delete both remove a selection — either key means "get rid of what is selected" in any
     /// text field, rather than "act on one character".
     /// </summary>
-    [TestCase(Key.Back)]
-    [TestCase(Key.Delete)]
+    [DataRow(Key.Back)]
+    [DataRow(Key.Delete)]
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Erasing_a_backwards_selection_removes_all_of_it(Key key)
     {
         var (view, window) = await RealShell();
@@ -685,13 +674,12 @@ public class ShiftSelectionTests
             Press(view, Key.Left, KeyModifiers.Shift);
             Press(view, Key.Left, KeyModifiers.Shift);
             await Task.Delay(300);
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("rld"), "sanity");
+            view.Terminal.Selection.GetSelectionText().Should().Be("rld", "sanity");
 
             Press(view, key);
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("hello wo"),
-                $"{key} removed the selection, and nothing more");
+            CursorRow(view).Should().EndWith("hello wo", $"{key} removed the selection, and nothing more");
 
         }
         finally
@@ -702,10 +690,10 @@ public class ShiftSelectionTests
     }
 
     /// <summary>The same for a word-wise selection, which is the longer one.</summary>
-    [TestCase(Key.Back)]
-    [TestCase(Key.Delete)]
+    [DataRow(Key.Back)]
+    [DataRow(Key.Delete)]
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Erasing_a_word_selection_removes_the_word(Key key)
     {
         var (view, window) = await RealShell();
@@ -717,7 +705,7 @@ public class ShiftSelectionTests
 
             Press(view, Key.Left, KeyModifiers.Alt | KeyModifiers.Shift);
             await Task.Delay(300);
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("world"), "sanity");
+            view.Terminal.Selection.GetSelectionText().Should().Be("world", "sanity");
 
             Press(view, key);
             await Task.Delay(900);
@@ -727,8 +715,7 @@ public class ShiftSelectionTests
             TypeText(view, "X");
             await Task.Delay(700);
 
-            Assert.That(CursorRow(view), Does.EndWith("hello X"),
-                "the word went and the space before it stayed");
+            CursorRow(view).Should().EndWith("hello X", "the word went and the space before it stayed");
 
         }
         finally
@@ -740,7 +727,7 @@ public class ShiftSelectionTests
 
     /// <summary>With nothing selected, Backspace still deletes exactly one character.</summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task Backspace_without_a_selection_is_unchanged()
     {
         var (view, window) = await RealShell();
@@ -753,7 +740,7 @@ public class ShiftSelectionTests
             Press(view, Key.Back);
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("hello worl"), "one character, as before");
+            CursorRow(view).Should().EndWith("hello worl", "one character, as before");
 
         }
         finally
@@ -790,7 +777,7 @@ public class ShiftSelectionTests
         // Cursor to column 1, past nothing — CHA, handled by the emulator itself.
         view.Terminal.Write("\u001b[1G");
         await Task.Delay(60);
-        Assert.That(view.Terminal.Buffer.X, Is.Zero, "sanity: the caret is back at the line start");
+        view.Terminal.Buffer.X.Should().Be(0, "sanity: the caret is back at the line start");
 
         Press(view, Key.End, KeyModifiers.Shift);
         await Task.Delay(80);
@@ -802,16 +789,13 @@ public class ShiftSelectionTests
         // whether the selection reaches cell 5, and that is what has to be asserted. The first rewrite of
         // this test checked only the text and passed against the bug.
         int row = view.Terminal.Buffer.Y;
-        Assert.Multiple(() =>
+        using (new AssertionScope())
         {
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("ab\u4e16\u754c"),
-                "every character is in the selection");
-            Assert.That(view.Terminal.Selection.IsCellSelected(4, row), Is.True,
-                "sanity: the last glyph itself is selected");
-            Assert.That(view.Terminal.Selection.IsCellSelected(5, row), Is.True,
-                "and its placeholder with it — the boundary is past the WHOLE glyph, not inside it");
-            Assert.That(pty.Written, Is.Empty, "and nothing reached the program");
-        });
+            view.Terminal.Selection.GetSelectionText().Should().Be("ab\u4e16\u754c", "every character is in the selection");
+            view.Terminal.Selection.IsCellSelected(4, row).Should().BeTrue("sanity: the last glyph itself is selected");
+            view.Terminal.Selection.IsCellSelected(5, row).Should().BeTrue("and its placeholder with it — the boundary is past the WHOLE glyph, not inside it");
+            pty.Written.Should().BeEmpty("and nothing reached the program");
+        };
 
         window.Close();
     }
@@ -830,8 +814,7 @@ public class ShiftSelectionTests
         Press(view, Key.Left, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(80);
 
-        Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("\u4e16\u754c"),
-            "both glyphs, not one and a half");
+        view.Terminal.Selection.GetSelectionText().Should().Be("\u4e16\u754c", "both glyphs, not one and a half");
         window.Close();
     }
 
@@ -852,13 +835,13 @@ public class ShiftSelectionTests
         Press(view, Key.Left, KeyModifiers.Shift);
         await Task.Delay(40);
         var caretWhileSelecting = view.CaretPosition;
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "sanity");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("sanity");
 
         Press(view, Key.C, KeyModifiers.Control | KeyModifiers.Shift);   // copy
         await Task.Delay(150);
 
-        Assert.That(view.Terminal.Selection.HasSelection, Is.True, "the selection survives the copy");
-        Assert.That(view.CaretPosition, Is.EqualTo(caretWhileSelecting), "and so does the caret");
+        view.Terminal.Selection.HasSelection.Should().BeTrue("the selection survives the copy");
+        view.CaretPosition.Should().Be(caretWhileSelecting, "and so does the caret");
 
         // Typing is what retires it, and the caret goes back to the shell's cursor.
         Press(view, Key.X);
@@ -866,8 +849,8 @@ public class ShiftSelectionTests
         Type(view, "world");
         await Task.Delay(60);
 
-        Assert.That(view.CaretPosition, Is.EqualTo((view.Terminal.Buffer.X,
-                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y)));
+        view.CaretPosition.Should().Be((view.Terminal.Buffer.X,
+                                                    view.Terminal.Buffer.YBase + view.Terminal.Buffer.Y));
         window.Close();
     }
 
@@ -875,8 +858,8 @@ public class ShiftSelectionTests
     /// The word gesture is horizontal. Ctrl+Shift with a vertical key or a line-edge key belongs to the
     /// application, and must still reach it rather than being swallowed as a local selection.
     /// </summary>
-    [TestCase(Key.Up)]
-    [TestCase(Key.Down)]
+    [DataRow(Key.Up)]
+    [DataRow(Key.Down)]
     [AvaloniaTest]
     public async Task Ctrl_shift_vertical_is_not_claimed_as_a_word_gesture(Key key)
     {
@@ -887,7 +870,7 @@ public class ShiftSelectionTests
         Press(view, key, KeyModifiers.Control | KeyModifiers.Shift);
         await Task.Delay(80);
 
-        Assert.That(pty.Written, Is.Not.Empty, $"Ctrl+Shift+{key} still reaches the application");
+        pty.Written.Should().NotBeEmpty($"Ctrl+Shift+{key} still reaches the application");
         window.Close();
     }
 
@@ -927,8 +910,7 @@ public class ShiftSelectionTests
             await Task.Delay(20);
         }
 
-        Assert.That(view.Terminal.Selection.GetSelectionText() ?? "", Is.Empty,
-            "there is nothing past the input to select");
+        (view.Terminal.Selection.GetSelectionText() ?? "").Should().BeEmpty("there is nothing past the input to select");
         window.Close();
     }
 
@@ -947,7 +929,7 @@ public class ShiftSelectionTests
     /// entry supplies it. A sibling test that used Home passed on one machine and failed on another.
     /// </remarks>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "drives a real bash")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "drives a real bash"
     public async Task A_forward_selection_is_erased_without_forward_delete()
     {
         var (view, window) = await RealShell();
@@ -963,14 +945,12 @@ public class ShiftSelectionTests
             Press(view, Key.Right, KeyModifiers.Shift);
             Press(view, Key.Right, KeyModifiers.Shift);
             await Task.Delay(300);
-            Assert.That(view.Terminal.Selection.GetSelectionText(), Is.EqualTo("hel"),
-                "sanity: a forward selection, focus past the anchor");
+            view.Terminal.Selection.GetSelectionText().Should().Be("hel", "sanity: a forward selection, focus past the anchor");
 
             Press(view, Key.Back);
             await Task.Delay(900);
 
-            Assert.That(CursorRow(view), Does.EndWith("lo world"),
-                "the selected text went, and nothing else with it");
+            CursorRow(view).Should().EndWith("lo world", "the selected text went, and nothing else with it");
         }
         finally
         {

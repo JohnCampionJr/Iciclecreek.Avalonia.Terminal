@@ -2,10 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
-using Avalonia.Headless.NUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// None of them throws, so an integration keeps compiling and keeps running while doing less than
 /// it says.
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class ControlSurfaceTests
 {
     // ------------------------------------------- handlers added before the template
@@ -45,8 +43,7 @@ public class ControlSurfaceTests
             Thread.Sleep(150);
 
             lock (seen)
-                Assert.That(seen.ToString(), Does.Contain("hello"),
-                    "a handler attached before the template must be moved onto the view, not dropped");
+                seen.ToString().Should().Contain("hello", "a handler attached before the template must be moved onto the view, not dropped");
         }
         finally { window.Close(); }
     }
@@ -72,7 +69,7 @@ public class ControlSurfaceTests
             Thread.Sleep(150);
 
             lock (seen)
-                Assert.That(seen.ToString(), Is.Empty);
+                seen.ToString().Should().BeEmpty();
         }
         finally { window.Close(); }
     }
@@ -108,8 +105,7 @@ public class ControlSurfaceTests
             Thread.Sleep(150);
 
             lock (seen)
-                Assert.That(seen.ToString(), Does.Contain("hello"),
-                    "a handler must follow the control, not the view it happened to be added under");
+                seen.ToString().Should().Contain("hello", "a handler must follow the control, not the view it happened to be added under");
         }
         finally { window.Close(); }
     }
@@ -132,7 +128,7 @@ public class ControlSurfaceTests
             control.SendInputAsync("hello").GetAwaiter().GetResult();
             Thread.Sleep(150);
 
-            Assert.That(sender, Is.SameAs(control), "matching ProcessExited, ShellReady and the rest");
+            sender.Should().BeSameAs(control, "matching ProcessExited, ShellReady and the rest");
         }
         finally { window.Close(); }
     }
@@ -161,7 +157,7 @@ public class ControlSurfaceTests
             Thread.Sleep(150);
 
             lock (seen)
-                Assert.That(seen.ToString(), Does.Contain("hello"));
+                seen.ToString().Should().Contain("hello");
         }
         finally { window.Close(); }
     }
@@ -178,8 +174,7 @@ public class ControlSurfaceTests
             window.UpdateLayout();
             Dispatcher.UIThread.RunJobs();
 
-            Assert.That(control.Options, Is.SameAs(control.Terminal.Options),
-                "the Options bridge has nothing to do with whether there is a scrollbar");
+            control.Options.Should().BeSameAs(control.Terminal.Options, "the Options bridge has nothing to do with whether there is a scrollbar");
         }
         finally { window.Close(); }
     }
@@ -202,10 +197,9 @@ public class ControlSurfaceTests
         // that same owner and name -- two StyledProperty objects claiming one registry entry. So a
         // style or setter aimed at TerminalControl.Options could resolve to whichever was reached
         // first, and nothing aimed at TerminalView.Options was aimed at this view at all.
-        Assert.That(TerminalView.OptionsProperty.OwnerType, Is.EqualTo(typeof(TerminalView)));
-        Assert.That(TerminalControl.OptionsProperty.OwnerType, Is.EqualTo(typeof(TerminalControl)));
-        Assert.That(TerminalView.OptionsProperty, Is.Not.SameAs(TerminalControl.OptionsProperty),
-            "sanity: they are and should be two properties -- the bug was the owner, not the pair");
+        TerminalView.OptionsProperty.OwnerType.Should().Be(typeof(TerminalView));
+        TerminalControl.OptionsProperty.OwnerType.Should().Be(typeof(TerminalControl));
+        TerminalView.OptionsProperty.Should().NotBeSameAs(TerminalControl.OptionsProperty, "sanity: they are and should be two properties -- the bug was the owner, not the pair");
     }
 
     // ------------------------------- the finding that turned out not to be one
@@ -232,11 +226,11 @@ public class ControlSurfaceTests
 
             view.Terminal.Write($"{esc}[?2026h");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(AtomicUpdate(view), Is.True, "BSU must have begun an atomic update");
+            AtomicUpdate(view).Should().BeTrue("BSU must have begun an atomic update");
 
             view.Terminal.Write($"{esc}[?2026l");
             Dispatcher.UIThread.RunJobs();
-            Assert.That(AtomicUpdate(view), Is.False, "and ESU must have ended it");
+            AtomicUpdate(view).Should().BeFalse("and ESU must have ended it");
         }
         finally { window.Close(); }
     }
@@ -245,7 +239,7 @@ public class ControlSurfaceTests
     {
         var f = typeof(TerminalView).GetField("_atomicUpdate",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        Assert.That(f, Is.Not.Null, "_atomicUpdate has been renamed; this test needs updating");
+        f.Should().NotBeNull("_atomicUpdate has been renamed; this test needs updating");
         return (bool)f!.GetValue(view)!;
     }
 
@@ -266,9 +260,8 @@ public class ControlSurfaceTests
         {
             view.Measure(new Size(800, double.PositiveInfinity));
 
-            Assert.That(double.IsInfinity(view.DesiredSize.Height), Is.False,
-                "a desired size of infinity is not a size");
-            Assert.That(view.DesiredSize.Height, Is.GreaterThan(0));
+            double.IsInfinity(view.DesiredSize.Height).Should().BeFalse("a desired size of infinity is not a size");
+            view.DesiredSize.Height.Should().BeGreaterThan(0);
         }
         finally { window.Close(); }
     }
@@ -285,7 +278,7 @@ public class ControlSurfaceTests
         window.Show();
         try
         {
-            Assert.DoesNotThrow(() => window.UpdateLayout());
+            ((Action)(() => window.UpdateLayout())).Should().NotThrow();
         }
         finally { window.Close(); }
     }
@@ -303,7 +296,7 @@ public class ControlSurfaceTests
         {
             view.Measure(new Size(640, 480));
 
-            Assert.That(view.DesiredSize, Is.EqualTo(new Size(640, 480)));
+            view.DesiredSize.Should().Be(new Size(640, 480));
         }
         finally { window.Close(); }
     }

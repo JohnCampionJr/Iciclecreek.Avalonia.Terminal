@@ -1,6 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -18,7 +16,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// application dividing 549 by 35 rows is told the terminal is taller than it is, sizes a picture to
 /// fill it, and the surplus scrolls whatever was above it off the top.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class WindowGeometryReportTests
 {
     private const string Esc = "\u001b";
@@ -46,9 +44,9 @@ public class WindowGeometryReportTests
     /// Sizes chosen so the text area is NOT a whole number of rows -- the ordinary case, and the one the
     /// old report got wrong.
     /// </summary>
-    [TestCase(800, 600)]
-    [TestCase(1188, 549)]
-    [TestCase(1024, 733)]
+    [DataRow(800, 600)]
+    [DataRow(1188, 549)]
+    [DataRow(1024, 733)]
     [AvaloniaTest]
     public async Task The_reported_pixel_size_divides_into_the_grid_exactly(int width, int height)
     {
@@ -63,7 +61,7 @@ public class WindowGeometryReportTests
             var reply = await AskAsync(window, pty, "[14t");
 
             var parts = reply.TrimEnd('t').Split(';');
-            Assert.That(parts.Length, Is.EqualTo(3), $"malformed reply: '{reply}'");
+            parts.Length.Should().Be(3, $"malformed reply: '{reply}'");
 
             var reportedHeight = int.Parse(parts[1]);
             var reportedWidth = int.Parse(parts[2]);
@@ -74,16 +72,14 @@ public class WindowGeometryReportTests
             var cellWidth = window.Terminal.Options.CellWidthPixels;
 
             // The division an image viewer performs, integer maths and all.
-            Assert.That(reportedHeight / rows, Is.EqualTo(cellHeight),
-                $"reported {reportedHeight}px over {rows} rows implies a {reportedHeight / rows}px cell, "
+            (reportedHeight / rows).Should().Be(cellHeight, $"reported {reportedHeight}px over {rows} rows implies a {reportedHeight / rows}px cell, "
                 + $"but images are laid out against {cellHeight}px");
-            Assert.That(reportedWidth / cols, Is.EqualTo(cellWidth),
-                $"reported {reportedWidth}px over {cols} cols implies a {reportedWidth / cols}px cell, "
+            (reportedWidth / cols).Should().Be(cellWidth, $"reported {reportedWidth}px over {cols} cols implies a {reportedWidth / cols}px cell, "
                 + $"but images are laid out against {cellWidth}px");
 
             // And no remainder, so there is no invisible strip a picture could be sized into.
-            Assert.That(reportedHeight, Is.EqualTo(rows * cellHeight));
-            Assert.That(reportedWidth, Is.EqualTo(cols * cellWidth));
+            reportedHeight.Should().Be(rows * cellHeight);
+            reportedWidth.Should().Be(cols * cellWidth);
         }
         finally { window.Close(); }
     }
@@ -92,9 +88,9 @@ public class WindowGeometryReportTests
     /// The end of the story that division begins: a picture sized to fill the reported area, the way a
     /// viewer does it, has to fit the screen rather than scroll it.
     /// </summary>
-    [TestCase(1188, 549)]
-    [TestCase(800, 600)]
-    [TestCase(1024, 733)]
+    [DataRow(1188, 549)]
+    [DataRow(800, 600)]
+    [DataRow(1024, 733)]
     [AvaloniaTest]
     public async Task An_image_sized_to_the_report_fits_without_scrolling(int width, int height)
     {
@@ -117,8 +113,7 @@ public class WindowGeometryReportTests
             available = available / 6 * 6;
             var imageRows = (available + cellHeight - 1) / cellHeight;
 
-            Assert.That(imageRows + 3, Is.LessThanOrEqualTo(rows),
-                $"a picture filling the reported {reportedHeight}px needs {imageRows} rows, and with the "
+            (imageRows + 3).Should().BeLessThanOrEqualTo(rows, $"a picture filling the reported {reportedHeight}px needs {imageRows} rows, and with the "
                 + $"viewer's own 3 rows of chrome that is {imageRows + 3} in a {rows} row terminal — the "
                 + "surplus scrolls the screen");
         }
@@ -129,7 +124,7 @@ public class WindowGeometryReportTests
     /// The cell size reported has to be the one images are actually laid out against, not a second
     /// measurement that might round differently.
     /// </summary>
-    [TestCase(1188, 549)]
+    [DataRow(1188, 549)]
     [AvaloniaTest]
     public async Task The_cell_size_report_matches_the_layout_grid(int width, int height)
     {
@@ -144,8 +139,8 @@ public class WindowGeometryReportTests
             var reply = await AskAsync(window, pty, "[16t");
             var parts = reply.TrimEnd('t').Split(';');
 
-            Assert.That(int.Parse(parts[1]), Is.EqualTo(window.Terminal.Options.CellHeightPixels));
-            Assert.That(int.Parse(parts[2]), Is.EqualTo(window.Terminal.Options.CellWidthPixels));
+            int.Parse(parts[1]).Should().Be(window.Terminal.Options.CellHeightPixels);
+            int.Parse(parts[2]).Should().Be(window.Terminal.Options.CellWidthPixels);
         }
         finally { window.Close(); }
     }

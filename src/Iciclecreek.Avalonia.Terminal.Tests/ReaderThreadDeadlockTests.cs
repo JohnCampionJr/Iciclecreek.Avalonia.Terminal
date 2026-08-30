@@ -1,8 +1,6 @@
 using System.Diagnostics;
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
 using Avalonia.Threading;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -19,7 +17,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// drives it, because the seam runs inline and harmlessly when Invoke is called from the UI thread
 /// itself -- a test that writes from the UI thread cannot see this bug at all.</para>
 /// </remarks>
-[TestFixture]
+[TestClass]
 public class ReaderThreadDeadlockTests
 {
     private static readonly string Esc = ((char)0x1B).ToString();
@@ -89,8 +87,7 @@ public class ReaderThreadDeadlockTests
         {
             var finished = WriteReturnsWithoutTheUIThread(view, $"{Esc}]7;file:///tmp/somewhere{Esc}\\");
 
-            Assert.That(finished, Is.True,
-                "Write did not return while the UI thread was idle, so the seam blocked on it. A "
+            finished.Should().BeTrue("Write did not return while the UI thread was idle, so the seam blocked on it. A "
                 + "reader thread holding _terminalLock would now be waiting on the UI thread while "
                 + "the UI thread waits for that lock -- the deadlock.");
         }
@@ -113,8 +110,7 @@ public class ReaderThreadDeadlockTests
 
             var finished = WriteReturnsWithoutTheUIThread(view, $"{Esc}[18t");
 
-            Assert.That(finished, Is.True,
-                "the window-info seam waited on the UI thread with no bound, so a reader holding "
+            finished.Should().BeTrue("the window-info seam waited on the UI thread with no bound, so a reader holding "
                 + "_terminalLock would wait for ever on a thread waiting for that lock");
         }
         finally { window.Close(); }
@@ -130,8 +126,7 @@ public class ReaderThreadDeadlockTests
             // Asserted, not ignored. If the write hangs, the poll below still runs and the failure
             // arrives as "the directory never turned up" -- which is true but describes the wrong
             // thing, and leaves a blocked background thread behind for the rest of the fixture.
-            Assert.That(WriteReturnsWithoutTheUIThread(view, $"{Esc}]7;file:///tmp/elsewhere{Esc}\\"),
-                Is.True, "the write blocked, so what follows would be measuring the wrong failure");
+            WriteReturnsWithoutTheUIThread(view, $"{Esc}]7;file:///tmp/elsewhere{Esc}\\").Should().BeTrue("the write blocked, so what follows would be measuring the wrong failure");
 
             var clock = Stopwatch.StartNew();
             while (clock.Elapsed < Patience && string.IsNullOrEmpty(view.CurrentDirectory))
@@ -140,7 +135,7 @@ public class ReaderThreadDeadlockTests
                 Thread.Sleep(10);
             }
 
-            Assert.That(view.CurrentDirectory, Does.Contain("elsewhere"));
+            view.CurrentDirectory.Should().Contain("elsewhere");
         }
         finally { window.Close(); }
     }

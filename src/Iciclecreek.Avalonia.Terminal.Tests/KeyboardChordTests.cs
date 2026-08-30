@@ -1,7 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -12,7 +10,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// they arrive by different routes: one falls through to the printable-character path, the other generates
 /// a sequence no shell binds.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class KeyboardChordTests
 {
     private const string Esc = "\u001b";   // what a shell binds word-motion to: ESC-b / ESC-f
@@ -26,7 +24,7 @@ public class KeyboardChordTests
         var pty = new RecordingConnection();
         view.AttachConnection(pty);
         view.Focus();
-        Assert.That(view.IsFocused, Is.True, "sanity: OnKeyDown returns early without focus");
+        view.IsFocused.Should().BeTrue("sanity: OnKeyDown returns early without focus");
         return (view, pty, window);
     }
 
@@ -82,15 +80,15 @@ public class KeyboardChordTests
     /// printable-character path — so the shell receives a literal character for a chord that belongs to the
     /// application. In a host that binds Cmd+K, the shell quietly gets a stray "k".
     /// </summary>
-    [TestCase(Key.K)]
-    [TestCase(Key.N)]
-    [TestCase(Key.T)]
+    [DataRow(Key.K)]
+    [DataRow(Key.N)]
+    [DataRow(Key.T)]
     [AvaloniaTest]
     public async Task A_meta_chord_is_not_typed_into_the_process(Key key)
     {
         var (view, pty, window) = LiveView();
         var written = await PressAndSettle(view, key, KeyModifiers.Meta, pty);
-        Assert.That(written, Is.Empty, $"Cmd+{key} belongs to the application, not the shell");
+        written.Should().BeEmpty($"Cmd+{key} belongs to the application, not the shell");
         window.Close();
     }
 
@@ -100,17 +98,16 @@ public class KeyboardChordTests
     /// ESC-b / ESC-f (backward-word / forward-word) is what zsh, bash's readline, fish and PSReadLine's
     /// default emacs mode all bind out of the box.
     /// </summary>
-    [TestCase(Key.Left, KeyModifiers.Alt, "b")]
-    [TestCase(Key.Right, KeyModifiers.Alt, "f")]
-    [TestCase(Key.Left, KeyModifiers.Control, "b")]
-    [TestCase(Key.Right, KeyModifiers.Control, "f")]
+    [DataRow(Key.Left, KeyModifiers.Alt, "b")]
+    [DataRow(Key.Right, KeyModifiers.Alt, "f")]
+    [DataRow(Key.Left, KeyModifiers.Control, "b")]
+    [DataRow(Key.Right, KeyModifiers.Control, "f")]
     [AvaloniaTest]
     public async Task Word_motion_sends_what_a_shell_actually_binds(Key key, KeyModifiers mods, string letter)
     {
         var (view, pty, window) = LiveView();
         var written = await PressAndAwait(view, key, mods, pty);
-        Assert.That(written, Is.EqualTo(Esc + letter),
-            "the modified-cursor sequence is bound by no default shell keymap and gets echoed as text");
+        written.Should().Be(Esc + letter, "the modified-cursor sequence is bound by no default shell keymap and gets echoed as text");
         window.Close();
     }
 }

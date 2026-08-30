@@ -1,6 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -12,7 +10,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// that exits at once loses everything; one that lives loses its opening banner, which presents as a pane
 /// that opened blank.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class ReaderStartupTests
 {
     private static Window Show(Control content)
@@ -62,7 +60,7 @@ public class ReaderStartupTests
     /// concurrency test below passes either way and this one does not.</para>
     /// </summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "uses sh; the window under test is not platform-specific")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "uses sh; the window under test is not platform-specific"
     public async Task Output_survives_a_saturated_thread_pool()
     {
         ThreadPool.GetMinThreads(out var minWorker, out var minIo);
@@ -115,7 +113,7 @@ public class ReaderStartupTests
     /// pty layer, which is worth holding still whatever the reader's threading turns out to be.</para>
     /// </summary>
     [AvaloniaTest]
-    [Platform(Exclude = "Win", Reason = "uses sh; the window under test is not platform-specific")]
+    [OSCondition(ConditionMode.Exclude, OperatingSystems.Windows)]  // "uses sh; the window under test is not platform-specific"
     public async Task Concurrent_short_lived_processes_all_deliver_their_output()
     {
         const int count = 8;
@@ -144,6 +142,6 @@ public class ReaderStartupTests
             foreach (var (_, window, _) in views) window.Close();
         }
 
-        Assert.Pass($"all {count} short-lived processes delivered their output");
+        return;
     }
 }

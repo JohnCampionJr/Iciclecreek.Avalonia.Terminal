@@ -1,6 +1,4 @@
 using System.Runtime.InteropServices;
-using Avalonia.Headless.NUnit;
-using NUnit.Framework;
 
 namespace Iciclecreek.Terminal.Tests;
 
@@ -16,7 +14,7 @@ namespace Iciclecreek.Terminal.Tests;
 /// <para>ProcessExited is a plain CLR event with no public raise path, so unlike the window-command events
 /// it cannot be synthesised; a real child is the only way in.</para>
 /// </summary>
-[TestFixture]
+[TestClass]
 public class TerminalProcessLifetimeTests
 {
     private static bool Posix => !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -43,7 +41,7 @@ public class TerminalProcessLifetimeTests
     [AvaloniaTest]
     public async Task ProcessExited_reaches_the_control_with_the_real_exit_code()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var control = new TerminalControl { Process = "" };
         var window = TerminalHost.Show(control);
@@ -52,8 +50,8 @@ public class TerminalProcessLifetimeTests
         {
             var code = await Exited(control, () => control.LaunchProcess(Path.GetTempPath(), "/bin/sh", "-c", "exit 5"));
 
-            Assert.That(code, Is.Not.Null, "the control never reported an exit at all");
-            Assert.That(code, Is.EqualTo(5), $"observed {code}");
+            code.Should().NotBeNull("the control never reported an exit at all");
+            code.Should().Be(5, $"observed {code}");
         }
         finally
         {
@@ -65,7 +63,7 @@ public class TerminalProcessLifetimeTests
     [AvaloniaTest]
     public async Task ExitCode_reflects_what_the_process_returned()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var control = new TerminalControl { Process = "" };
         var window = TerminalHost.Show(control);
@@ -73,10 +71,9 @@ public class TerminalProcessLifetimeTests
         try
         {
             var code = await Exited(control, () => control.LaunchProcess(Path.GetTempPath(), "/bin/sh", "-c", "exit 5"));
-            Assert.That(code, Is.Not.Null, "the control never reported an exit at all");
+            code.Should().NotBeNull("the control never reported an exit at all");
 
-            Assert.That(control.ExitCode, Is.EqualTo(5),
-                $"the event said {code} but the property says {control.ExitCode}; they describe the same process");
+            control.ExitCode.Should().Be(5, $"the event said {code} but the property says {control.ExitCode}; they describe the same process");
         }
         finally
         {
@@ -88,7 +85,7 @@ public class TerminalProcessLifetimeTests
     [AvaloniaTest]
     public async Task Pid_identifies_the_launched_process()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var control = new TerminalControl { Process = "" };
         var window = TerminalHost.Show(control);
@@ -97,7 +94,7 @@ public class TerminalProcessLifetimeTests
         {
             await control.LaunchProcess(Path.GetTempPath(), "/bin/sh", "-c", "sleep 2");
 
-            Assert.That(control.Pid, Is.GreaterThan(0), $"observed {control.Pid}");
+            control.Pid.Should().BeGreaterThan(0, $"observed {control.Pid}");
 
             control.Kill();
         }
@@ -115,7 +112,7 @@ public class TerminalProcessLifetimeTests
     [AvaloniaTest]
     public async Task CurrentDirectory_is_seeded_from_the_starting_directory()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var dir = Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar);
         var control = new TerminalControl { Process = "" };
@@ -125,8 +122,7 @@ public class TerminalProcessLifetimeTests
         {
             await control.LaunchProcess(dir, "/bin/sh", "-c", "sleep 2");
 
-            Assert.That(control.CurrentDirectory, Is.EqualTo(dir),
-                $"observed '{control.CurrentDirectory ?? "null"}'");
+            control.CurrentDirectory.Should().Be(dir, $"observed '{control.CurrentDirectory ?? "null"}'");
 
             control.Kill();
         }
@@ -143,7 +139,7 @@ public class TerminalProcessLifetimeTests
     [AvaloniaTest]
     public async Task CloseOnProcessExit_closes_the_window_after_raising_the_event()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var window = new TerminalWindow { Process = "", CloseOnProcessExit = true }.Realise();
 
@@ -159,16 +155,15 @@ public class TerminalProcessLifetimeTests
 
         var done = await Task.WhenAny(exited.Task, Task.Delay(ReportWindow));
 
-        Assert.That(done, Is.SameAs(exited.Task), "the window never reported an exit");
-        Assert.That(openAtRaise, Is.True,
-            "the event has to arrive while the window is still open, or a handler cannot inspect it");
+        done.Should().BeSameAs(exited.Task, "the window never reported an exit");
+        openAtRaise.Should().BeTrue("the event has to arrive while the window is still open, or a handler cannot inspect it");
     }
 
     /// <summary>The opt-out: the window stays open, and this test is responsible for closing it.</summary>
     [AvaloniaTest]
     public async Task CloseOnProcessExit_false_leaves_the_window_open()
     {
-        if (!Posix) Assert.Ignore("POSIX only");
+        if (!Posix) Assert.Inconclusive("POSIX only");
 
         var window = new TerminalWindow { Process = "", CloseOnProcessExit = false }.Realise();
 
@@ -180,10 +175,9 @@ public class TerminalProcessLifetimeTests
             await window.LaunchProcess(Path.GetTempPath(), "/bin/sh", "-c", "exit 0");
 
             var done = await Task.WhenAny(exited.Task, Task.Delay(ReportWindow));
-            Assert.That(done, Is.SameAs(exited.Task), "the window never reported an exit");
+            done.Should().BeSameAs(exited.Task, "the window never reported an exit");
 
-            Assert.That(window.IsVisible, Is.True,
-                "the host opted out of automatic closing and the window closed anyway");
+            window.IsVisible.Should().BeTrue("the host opted out of automatic closing and the window closed anyway");
         }
         finally
         {
