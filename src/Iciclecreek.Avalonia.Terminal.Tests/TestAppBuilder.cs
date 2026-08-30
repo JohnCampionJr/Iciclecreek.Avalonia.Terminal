@@ -3,6 +3,12 @@ using Avalonia.Headless;
 using Avalonia.Themes.Fluent;
 using Iciclecreek.Terminal.Tests;
 
+// Class-level parallelism: plain tests overlap each other and the headless dispatcher's queue.
+// [AvaloniaTest] bodies still serialise on the one session thread -- that is the ceiling -- but
+// the suite's non-UI classes and MSTest's own bookkeeping run concurrently. Six workers is the
+// measured sweet spot on the machines this runs on; more just swamps the host.
+[assembly: Parallelize(Workers = 6, Scope = ExecutionScope.ClassLevel)]
+
 [assembly: AvaloniaTestApplication(typeof(TestAppBuilder))]
 
 // ONE Application + Dispatcher for the whole assembly.

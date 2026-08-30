@@ -12,6 +12,7 @@ namespace Iciclecreek.Avalonia.Terminal.Tests;
 /// UI thread that these assertions do not.</para>
 /// </summary>
 [TestClass]
+[DoNotParallelize]  // mutates the process-global TerminalRenderThrottle.TargetFrameRate
 public class RenderFrameRateTests
 {
     private int _original;
