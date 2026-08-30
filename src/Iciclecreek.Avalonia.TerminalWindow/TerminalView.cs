@@ -4631,7 +4631,31 @@ namespace Iciclecreek.Terminal
                     e.CellWidth = args.CellWidth;
                     e.CellHeight = args.CellHeight;
                     e.Title = args.Title;
+                    return;
                 }
+            }
+
+            // Nobody upstream answered, and this view KNOWS the geometry questions -- it publishes
+            // exactly these numbers into the emulator's options every layout pass. Leaving a
+            // geometry query unanswered is worse than wrong: a client sizing a placeholder grid
+            // falls back to guessing a cell size, the emulator tiles the image by the real one,
+            // and the two disagree about how many cells the picture covers -- which shears the
+            // picture into repeated bands and split columns. The answer must be the SAME metric
+            // the emulator tiles with, which is Options.CellWidthPixels: device pixels.
+            switch (e.Request)
+            {
+                case XT.Common.WindowInfoRequest.CellSizePixels:
+                    e.CellWidth = _terminal.Options.CellWidthPixels;
+                    e.CellHeight = _terminal.Options.CellHeightPixels;
+                    e.Handled = e.CellWidth > 0 && e.CellHeight > 0;
+                    break;
+
+                case XT.Common.WindowInfoRequest.SizePixels:
+                case XT.Common.WindowInfoRequest.ScreenSizePixels:
+                    e.WidthPixels = _terminal.Cols * _terminal.Options.CellWidthPixels;
+                    e.HeightPixels = _terminal.Rows * _terminal.Options.CellHeightPixels;
+                    e.Handled = e.WidthPixels > 0 && e.HeightPixels > 0;
+                    break;
             }
         }
 
