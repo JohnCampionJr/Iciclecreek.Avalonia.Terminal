@@ -119,6 +119,7 @@ namespace Iciclecreek.Terminal.Skia
                 {
                     snapshot.Rows[row] = null;
                     snapshot.Deferred[row] = true;
+                    snapshot.AnyDeferred = true;
                     continue;
                 }
 

@@ -47,8 +47,25 @@ namespace Iciclecreek.Terminal
 
         private XT.Terminal _terminal;
 
-        private readonly Skia.SnapshotBuilder _snapshotBuilder = new();
-        private readonly Skia.SkiaFontCache _skiaFonts = new();
+        /// <summary>
+        /// The renderer the grid is drawn by. The classic one always exists and is the fallback for
+        /// whatever another declines; the direct one is built on first use and dropped for good if
+        /// the backend turns out not to support it.
+        /// </summary>
+        private Rendering.ITerminalGridRenderer GridRenderer =>
+            _skiaRenderer ??= new Rendering.SkiaGridRenderer(RequestPaint);
+
+        private Rendering.ClassicGridRenderer ClassicRenderer =>
+            _classicRenderer ??= new Rendering.ClassicGridRenderer(this);
+
+        private Rendering.SkiaGridRenderer? _skiaRenderer;
+        private Rendering.ClassicGridRenderer? _classicRenderer;
+
+        private void DisposeSkiaRenderer()
+        {
+            _skiaRenderer?.Dispose();
+            _skiaRenderer = null;
+        }
 
         /// <summary>
         /// Whether the cell grid is drawn straight onto the Skia canvas instead of through
@@ -67,11 +84,8 @@ namespace Iciclecreek.Terminal
             set => SetValue(UseSkiaRendererProperty, value);
         }
 
-        /// <summary>Latched once a layer reports the backend will not lease a Skia canvas.</summary>
+        /// <summary>Latched once the direct renderer reports this backend cannot support it.</summary>
         private bool _skiaUnsupported;
-
-        /// <summary>The layer enqueued last frame, asked afterwards whether it could draw.</summary>
-        private Skia.TerminalSkiaLayer? _lastSkiaLayer;
 
 
         private FormattedText _measureText;
@@ -1908,11 +1922,9 @@ namespace Iciclecreek.Terminal
             // during supported reparenting, both of which are followed by more painting -- and a
             // custom draw operation already queued still holds this cache on the render thread, so
             // disposing on detach could pull native handles out from under an in-flight composite.
-            _skiaFonts.Dispose();
-
-            // And the layer this view kept only to read its Unsupported report: it holds a snapshot,
-            // its rows, and through them any images those rows referenced.
-            _lastSkiaLayer = null;
+            // The direct renderer owns its font cache and the layer it kept to read that layer's
+            // report; disposing it releases both.
+            DisposeSkiaRenderer();
 
             UnsubscribeTerminalEvents();
 

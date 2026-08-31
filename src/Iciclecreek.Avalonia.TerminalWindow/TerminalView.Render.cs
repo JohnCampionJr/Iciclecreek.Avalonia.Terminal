@@ -330,60 +330,33 @@ namespace Iciclecreek.Terminal
             int startLine = viewportY;
             int endLine = Math.Min(_terminal.Buffer.Length, startLine + viewportLines);
 
-            // The direct renderer draws the cell grid onto the Skia canvas instead of recording a fill
-            // and a text draw per run. Everything after it — cursor, selection, the hovered link —
-            // still goes through DrawingContext and lands on top, because Custom() enqueues into the
-            // same list.
-            //
-            // The snapshot is taken HERE, on the UI thread. The operation runs during compositing, on
-            // another thread, while the pty read loop may be writing to the buffer; it must never
-            // touch the buffer or the palette itself.
-            // Null unless the direct path both applies and can run; the row loop below consults it
-            // to draw exactly the rows the snapshot declined.
-            Skia.TerminalSnapshot? skiaSnapshot = null;
+            // The grid, drawn by whichever renderer is configured -- and by the classic one for
+            // whatever that renderer declined. Everything after this point is the chrome both share:
+            // the sized blocks, the search highlights, the hovered link, the selection, the cursor
+            // and the IME preedit are overlays over a grid rather than parts of one.
+            var frame = new Rendering.GridFrame(
+                _terminal, _palette, _minimumContrast,
+                startLine, viewportLines, _terminal.Cols,
+                _charWidth, _charHeight, FontSize, FontFamily,
+                GetValue(ForegroundProperty), surface, scale,
+                Ligatures, _terminal.ReverseVideo, _cursorBlinkOn, _boldIsBright);
 
-            // A custom draw operation only draws where Avalonia is on its Skia backend, and there
-            // is no way to ask before enqueuing one -- so the layer reports afterwards and this
-            // reads the report BEFORE deciding, on the frame after the one that failed. Asking
-            // inside the else of the decision (as this first did) never runs: on any frame where
-            // the direct path applies, the if branch is taken and the report is never read, so a
-            // non-Skia backend stayed silently blank forever instead of falling back once.
-            if (_lastSkiaLayer is { Unsupported: true })
+            var outstanding = Rendering.GridCoverage.Everything;
+
+            if (UseSkiaRenderer && !_skiaUnsupported)
             {
-                _skiaUnsupported = true;
-                _lastSkiaLayer = null;
-            }
+                outstanding = GridRenderer.DrawGrid(context, frame, outstanding);
 
-            // INSIDE a try of its own: this reads the live buffer without the lock, exactly as the
-            // classic loop does, and the classic loop's own catch is what keeps a concurrent write
-            // from turning a race into an unhandled exception out of Render. Building outside that
-            // protection gave the two paths different failure modes for the same race.
-            try
-            {
-            if (UseSkiaRenderer && !_skiaUnsupported && _charWidth > 0 && _charHeight > 0)
-            {
-                var snapshot = _snapshotBuilder.Build(
-                    _terminal, _palette, startLine, viewportLines, _terminal.Cols,
-                    _charWidth, _charHeight, FontSize, FontFamily?.Name ?? "monospace",
-                    GetValue(ForegroundProperty), surface, RequestPaint, Ligatures,
-                    _terminal.ReverseVideo, _cursorBlinkOn, _boldIsBright, _minimumContrast);
-
-                snapshot.RenderScale = scale;
-
-                var layer = new Skia.TerminalSkiaLayer(snapshot, _skiaFonts,
-                    new Rect(0, 0, _terminal.Cols * _charWidth, viewportLines * _charHeight));
-                context.Custom(layer);
-
-                skiaSnapshot = snapshot;
-                _lastSkiaLayer = layer;
-            }
-            }
-            catch (Exception ex)
-            {
-                // A write landed mid-read. Draw this frame classically rather than losing it, and
-                // let the write that interrupted us ask for the next one.
-                Debug.WriteLine($"[TerminalView] Skia snapshot skipped: {ex.Message}");
-                skiaSnapshot = null;
+                if (outstanding.Unavailable)
+                {
+                    // This backend will not give that renderer what it needs, and it says so once.
+                    // Drop it for the life of the view: the classic renderer draws every frame from
+                    // here, starting with this one, so the failure costs a frame rather than a
+                    // terminal that never paints.
+                    DisposeSkiaRenderer();
+                    _skiaUnsupported = true;
+                    outstanding = Rendering.GridCoverage.Everything;
+                }
             }
 
             try
@@ -425,53 +398,10 @@ namespace Iciclecreek.Terminal
                     }
                 }
 
-                for (int y = startLine; y < endLine; y++)
-                {
-                    // With the direct path running, this loop draws only what the snapshot declined:
-                    // a doubled row, or one carrying OSC 66 sized runs. Both need what the snapshot
-                    // has no field for, and drawing them wrong is worse than not drawing them fast.
-                    if (skiaSnapshot is not null && !skiaSnapshot.IsDeferred(y - startLine))
-                        continue;
+                // The rows the grid renderer declined -- all of them when it is the classic one.
+                if (!outstanding.IsComplete)
+                    ClassicRenderer.DrawGrid(context, frame, outstanding);
 
-                    // The buffer can SHRINK underneath a render. CSI 3 J — what cmd.exe's `cls` sends —
-                    // discards the entire scrollback, and it arrives on the PTY thread, so the bounds
-                    // captured above can point past the end by the time we reach this line.
-                    //
-                    // This could not happen before: the buffer only ever grew, or dropped a single line at
-                    // a time once it hit capacity, so a stale index stayed valid. A wholesale discard can
-                    // remove hundreds at once. Without this check GetLine throws IndexOutOfRangeException,
-                    // the catch below swallows it, and the REST OF THE FRAME is lost — plus anyone running
-                    // under a debugger gets a first-chance break every time they clear the screen.
-                    //
-                    // Breaking out costs at most one dropped frame: the write that trimmed the buffer
-                    // requests another render, and that one sees consistent bounds.
-                    if (y >= _terminal.Buffer.Length)
-                        break;
-
-                    var line = _terminal.Buffer.GetLine(y);
-                    if (line == null)
-                        continue;
-
-                    int screenY = y - startLine;
-
-                    // Calculate Y positions for this screen row
-                    var startYPos = Snap(screenY * _charHeight, scale);
-                    var endYPos = Snap((screenY + 1) * _charHeight, scale);
-                    var rowHeight = Math.Max(0, endYPos - startYPos);
-
-                    // Check for double-width/double-height line attributes
-                    var lineAttr = line.LineAttribute;
-                    if (lineAttr == LineAttribute.DoubleWidth ||
-                             lineAttr == LineAttribute.DoubleHeightTop ||
-                             lineAttr == LineAttribute.DoubleHeightBottom)
-                    {
-                        RenderDoubleWidthLine(context, line, screenY, startYPos, rowHeight, lineAttr, scale);
-                    }
-                    else
-                    {
-                        RenderNormalLine(context, line, screenY, startYPos, rowHeight, scale);
-                    }
-                }
 
                 // OSC 66 blocks, after every row's background and text and before the overlays:
                 // selection and the cursor still draw over scaled text, as they do over plain text.
@@ -1993,6 +1923,73 @@ namespace Iciclecreek.Terminal
                 var pen = new Pen(foreground, Math.Max(1.0, scale));
                 context.DrawLine(pen, new Point(posX, underlineY), new Point(posX + textWidth, underlineY));
             }
+        }
+
+
+        /// <summary>
+        /// Draws the grid rows through the DrawingContext path -- every row the grid renderer left
+        /// outstanding, which for the classic renderer is all of them.
+        /// </summary>
+        /// <remarks>
+        /// Still a method on the view rather than on <see cref="Rendering.ClassicGridRenderer"/>,
+        /// which calls it: the drawing reaches into per-frame state the view owns (the palette
+        /// snapshot, the contrast floor, the deferred sized-block list, the run text builder), and
+        /// moving that is a change worth making on its own rather than alongside the seam.
+        /// </remarks>
+        internal void DrawClassicRows(DrawingContext context, in Rendering.GridFrame frame,
+                                      in Rendering.GridCoverage outstanding)
+        {
+            var startLine = frame.StartLine;
+            var endLine = Math.Min(_terminal.Buffer.Length, startLine + frame.Rows);
+            var scale = frame.RenderScale;
+
+                for (int y = startLine; y < endLine; y++)
+                {
+                    // With the direct path running, this loop draws only what the snapshot declined:
+                    // a doubled row, or one carrying OSC 66 sized runs. Both need what the snapshot
+                    // has no field for, and drawing them wrong is worse than not drawing them fast.
+                    if (!outstanding.NeedsDrawing(y - startLine))
+                        continue;
+
+                    // The buffer can SHRINK underneath a render. CSI 3 J — what cmd.exe's `cls` sends —
+                    // discards the entire scrollback, and it arrives on the PTY thread, so the bounds
+                    // captured above can point past the end by the time we reach this line.
+                    //
+                    // This could not happen before: the buffer only ever grew, or dropped a single line at
+                    // a time once it hit capacity, so a stale index stayed valid. A wholesale discard can
+                    // remove hundreds at once. Without this check GetLine throws IndexOutOfRangeException,
+                    // the catch below swallows it, and the REST OF THE FRAME is lost — plus anyone running
+                    // under a debugger gets a first-chance break every time they clear the screen.
+                    //
+                    // Breaking out costs at most one dropped frame: the write that trimmed the buffer
+                    // requests another render, and that one sees consistent bounds.
+                    if (y >= _terminal.Buffer.Length)
+                        break;
+
+                    var line = _terminal.Buffer.GetLine(y);
+                    if (line == null)
+                        continue;
+
+                    int screenY = y - startLine;
+
+                    // Calculate Y positions for this screen row
+                    var startYPos = Snap(screenY * _charHeight, scale);
+                    var endYPos = Snap((screenY + 1) * _charHeight, scale);
+                    var rowHeight = Math.Max(0, endYPos - startYPos);
+
+                    // Check for double-width/double-height line attributes
+                    var lineAttr = line.LineAttribute;
+                    if (lineAttr == LineAttribute.DoubleWidth ||
+                             lineAttr == LineAttribute.DoubleHeightTop ||
+                             lineAttr == LineAttribute.DoubleHeightBottom)
+                    {
+                        RenderDoubleWidthLine(context, line, screenY, startYPos, rowHeight, lineAttr, scale);
+                    }
+                    else
+                    {
+                        RenderNormalLine(context, line, screenY, startYPos, rowHeight, scale);
+                    }
+                }
         }
 
     }

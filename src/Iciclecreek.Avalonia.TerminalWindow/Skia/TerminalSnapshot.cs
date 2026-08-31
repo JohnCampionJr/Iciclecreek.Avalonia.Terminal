@@ -251,6 +251,9 @@ namespace Iciclecreek.Terminal.Skia
         /// </summary>
         public bool[] Deferred = new bool[0];
 
+        /// <summary>Whether any row was declined this frame, so the caller can skip asking.</summary>
+        public bool AnyDeferred;
+
         /// <summary>Whether the classic path should draw <paramref name="screenRow"/> itself.</summary>
         public bool IsDeferred(int screenRow) =>
             screenRow >= 0 && screenRow < RowCount && screenRow < Deferred.Length && Deferred[screenRow];
@@ -264,6 +267,8 @@ namespace Iciclecreek.Terminal.Skia
                 Deferred = new bool[rows];
             else
                 Array.Clear(Deferred, 0, rows);
+
+            AnyDeferred = false;
 
             RowCount = rows;
             Cols = cols;
