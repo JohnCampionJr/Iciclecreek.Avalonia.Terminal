@@ -105,6 +105,12 @@ namespace Iciclecreek.Terminal.Skia
             // why it is worth having. Drawing nothing and asking for another frame makes the
             // failure a blank grid for one frame; leaving it makes it a torn screen that waits for
             // an unrelated repaint, and that is the version that costs an afternoon to find.
+            //
+            // One check, before the draw, is enough: the header cannot be recycled until THIS
+            // operation is disposed, because Dispose is what hands it back and it does so exactly
+            // once. Avalonia does not dispose an operation while it is rendering it -- the same
+            // ordering the shaping buffer freed in Dispose has always relied on, where a Dispose
+            // racing a Draw would be a native use-after-free long before it was a torn frame.
             if (_snapshot.FrameId != _frameId)
             {
                 Volatile.Write(ref _stale, 1);
