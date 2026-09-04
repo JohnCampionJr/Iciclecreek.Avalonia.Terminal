@@ -1,9 +1,12 @@
 ﻿using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Iciclecreek.Terminal;
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 
 namespace Demo.Views;
 
@@ -96,6 +99,74 @@ public partial class MainWindow : Window
         terminalWindow.Options = DemoOptions();
         WireHostSeams(terminalWindow);
         Demo.PtyTrace.Attach(terminalWindow.Terminal, terminalWindow.Title ?? "managed");
+        terminalWindow.Show(Windows);
+    }
+
+    // ---- pwsh with shell integration injected --------------------------------------------------------
+
+    /// <summary>
+    /// PowerShell with OSC 133 and OSC 7 injected at spawn, and the gutter turned on so the marks
+    /// have somewhere to show.
+    /// </summary>
+    /// <remarks>
+    /// <para>Everything visible here is the TERMINAL's: the shell's prompt is untouched. The library
+    /// rewrites the arguments so the script loads after the profiles and wraps whatever prompt is
+    /// there; the control reads the marks and paints a bar per prompt row -- green for a command that
+    /// exited 0, red otherwise. Ctrl+Up and Ctrl+Down jump between prompts.</para>
+    /// <para>Run <c>echo hello</c>, then <c>false</c>, then look at the gutter.</para>
+    /// </remarks>
+    private void OnPwshIntegratedClicked(object? sender, RoutedEventArgs e)
+    {
+        // Where the library's scripts landed: it ships them as content, so they are beside this app.
+        var resources = Path.Combine(AppContext.BaseDirectory, "shell-integration");
+
+        var shell = OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh";
+        var environment = new Dictionary<string, string>();
+        foreach (System.Collections.DictionaryEntry entry in Environment.GetEnvironmentVariables())
+            environment[(string)entry.Key] = (string)(entry.Value ?? "");
+
+        var prepared = Terminal.ShellIntegration.ShellIntegration.Prepare(
+            shell, new[] { "-NoLogo" }, environment, resources);
+
+        if (!prepared.Injected)
+            Console.WriteLine($"[demo] pwsh NOT instrumented: {prepared.Skipped} (resources at {resources})");
+
+        var terminalWindow = new ManagedTerminalWindow
+        {
+            Ligatures = true,
+            Process = shell,
+            ProcessArgs = prepared.Args.ToList(),
+            Title = prepared.Injected ? "pwsh — integrated" : "pwsh — NOT integrated",
+            Background = Avalonia.Media.Brushes.Black,
+            Foreground = Avalonia.Media.Brushes.LightGray,
+            Width = 100 * FontSize,
+            Height = 30 * FontSize,
+            CloseOnProcessExit = true,
+        };
+        terminalWindow.Options = DemoOptions();
+
+        // The window does not forward these, and the control exists from construction while the
+        // process only launches on Show -- so they go straight onto the control, in between.
+        var control = terminalWindow.Terminal;
+        control.EnvironmentVariables = new Dictionary<string, string>(prepared.Environment);
+        control.GutterWidth = 12;
+        control.GutterPromptBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#A981FF"));   // violet: a prompt
+        control.GutterSuccessBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#2ED9A4"));  // mint: exited 0
+        control.GutterFailureBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#FF5C5C"));  // coral: exited non-zero
+
+        // Jump between prompts. Tunnelled so the shortcut wins over the terminal, which otherwise
+        // eats every key -- the same reason the find bar's shortcut is wired this way.
+        terminalWindow.AddHandler(KeyDownEvent, (_, k) =>
+        {
+            if (k.KeyModifiers != KeyModifiers.Control)
+                return;
+
+            if (k.Key == Key.Up) k.Handled = control.ScrollToPreviousPrompt();
+            else if (k.Key == Key.Down) k.Handled = control.ScrollToNextPrompt();
+        }, RoutingStrategies.Tunnel);
+
+        WireHostSeams(terminalWindow);
+        Demo.PtyTrace.Attach(terminalWindow.Terminal, terminalWindow.Title ?? "pwsh");
         terminalWindow.Show(Windows);
     }
 

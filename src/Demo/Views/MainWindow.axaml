@@ -19,6 +19,7 @@
 			<MenuItem Header="_Managed Window">
 				<MenuItem Header="_New" Click="OnNewManagedClicked"/>
 				<MenuItem Header="_Run..." Click="OnRunManagedClicked"/>
+				<MenuItem Header="_pwsh, integrated" Click="OnPwshIntegratedClicked"/>
 			</MenuItem>
 			<!-- TerminalWindow: a real top-level OS window. Exercising it here is the point — it had no
 			     consumer anywhere in this repo, which is how it shipped unable to render a terminal. -->

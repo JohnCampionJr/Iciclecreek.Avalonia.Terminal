@@ -21,5 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Iciclecreek.Avalonia.TerminalWindow\Iciclecreek.Avalonia.Terminal.csproj" />
+    <!-- The shell-integration library, as a sibling checkout, for the "pwsh, integrated" demo.
+         Its scripts ship as content and land in this app's output as shell-integration/. -->
+    <ProjectReference Include="..\..\..\terminal-shell-integration\src\Terminal.ShellIntegration\Terminal.ShellIntegration.csproj" />
   </ItemGroup>
 </Project>
