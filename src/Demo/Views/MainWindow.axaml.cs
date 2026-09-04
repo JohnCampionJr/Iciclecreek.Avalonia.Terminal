@@ -145,28 +145,41 @@ public partial class MainWindow : Window
         };
         terminalWindow.Options = DemoOptions();
 
-        // The window does not forward these, and the control exists from construction while the
-        // process only launches on Show -- so they go straight onto the control, in between.
-        var control = terminalWindow.Terminal;
-        control.EnvironmentVariables = new Dictionary<string, string>(prepared.Environment);
-        control.GutterWidth = 12;
-        control.GutterPromptBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#A981FF"));   // violet: a prompt
-        control.GutterSuccessBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#2ED9A4"));  // mint: exited 0
-        control.GutterFailureBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#FF5C5C"));  // coral: exited non-zero
+        // The window does not forward these, and it only builds its control inside Show
+        // (OnInitialized runs from EnsureInitialized -- the constructor loads no XAML). Initialized
+        // fires right after that, still before Opened and before the control loads and launches the
+        // process, so this is the one moment the control exists and the environment can still land.
+        terminalWindow.Initialized += (_, _) =>
+        {
+            var control = terminalWindow.Terminal!;
+            control.EnvironmentVariables = new Dictionary<string, string>(prepared.Environment);
+            control.GutterWidth = 12;
+            control.GutterPromptBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#A981FF"));   // violet: a prompt
+            control.GutterSuccessBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#2ED9A4"));  // mint: exited 0
+            control.GutterFailureBrush = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#FF5C5C"));  // coral: exited non-zero
+            Demo.PtyTrace.Attach(control, terminalWindow.Title ?? "pwsh");
+        };
 
         // Jump between prompts. Tunnelled so the shortcut wins over the terminal, which otherwise
         // eats every key -- the same reason the find bar's shortcut is wired this way.
         terminalWindow.AddHandler(KeyDownEvent, (_, k) =>
         {
-            if (k.KeyModifiers != KeyModifiers.Control)
+            // Ctrl on every platform, and Cmd (Meta) on macOS where that is the native chord.
+            var control = terminalWindow.Terminal;
+            if (control == null || (k.KeyModifiers != KeyModifiers.Control && k.KeyModifiers != KeyModifiers.Meta))
                 return;
 
-            if (k.Key == Key.Up) k.Handled = control.ScrollToPreviousPrompt();
-            else if (k.Key == Key.Down) k.Handled = control.ScrollToNextPrompt();
+            if (k.Key == Key.Up) control.ScrollToPreviousPrompt();
+            else if (k.Key == Key.Down) control.ScrollToNextPrompt();
+            else return;
+
+            // Swallow the chord even when there was nowhere to go. Left unhandled it reaches the
+            // terminal as input, and any input snaps the viewport to the bottom -- which from the
+            // oldest prompt looks like a wrap, and under key repeat is a flicker.
+            k.Handled = true;
         }, RoutingStrategies.Tunnel);
 
         WireHostSeams(terminalWindow);
-        Demo.PtyTrace.Attach(terminalWindow.Terminal, terminalWindow.Title ?? "pwsh");
         terminalWindow.Show(Windows);
     }
 
