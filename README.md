@@ -248,14 +248,21 @@ Two things are handled for you and are worth knowing about:
 - The cell size measured from your font is published to the emulator and is the answer given to a
   `CSI 16 t` query. That is what applications use to size their images, so a picture lines up with the
   grid it was drawn for — including after a font change or a move to a display with different scaling.
-- One bitmap is uploaded per image and cached weakly against it, so a picture on screen is re-blitted
-  rather than re-decoded on every frame, and the bitmap is released when the terminal drops the image.
+- A picture is uploaded once and re-blitted on every frame after that, not re-decoded; the upload is
+  released when the terminal drops the picture. Wherever Avalonia runs on Skia, the pictures in front
+  of the text are drawn by a small picture layer from GPU textures made once per picture, so a screen
+  full of pictures costs draws, not bandwidth. Text is always drawn through `DrawingContext`.
 
-One row of a picture is one draw. The emulator stores a picture as a run per line rather than
-scattering it through cells, so there is nothing to coalesce and no tile arithmetic to do — the run
-carries the source rectangle and the columns it covers, and the whole strip goes down in a single
-call. On a backend with no raster surface — Consolonia, for instance — images are skipped and the
-text still renders.
+Sixel is drawn as **one image per line**, however many Sixels landed on it. XTerm.NET keeps the pixels
+each line shows rather than every picture that painted them, so a program that repaints small regions
+over and over — a cursor, a hover, a diffing framebuffer such as SixelBuffer — costs at most one draw
+per row. The strip is drawn over the text and under any Kitty picture in front of it, and is uploaded
+again only when its pixels change.
+
+A Kitty picture is held as a run per line. Each run carries the source rectangle and the columns it
+covers; the picture layer gathers the rows of one placement and draws the picture once, clipped to
+them. On a backend with no raster surface — Consolonia,
+for instance — images are skipped and the text still renders.
 
 Pictures may overlap, and a row is drawn one run at a time from the back forwards, with the text
 going down between the ones behind it and the ones in front. That ordering is the whole of the
