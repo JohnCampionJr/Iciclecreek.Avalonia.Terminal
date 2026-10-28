@@ -12,6 +12,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Iciclecreek.Avalonia.Terminal;
 using Porta.Pty;
 using System;
@@ -149,11 +150,28 @@ namespace Iciclecreek.Terminal
                 nameof(WindowInfoRequested),
                 RoutingStrategies.Bubble);
 
-        public static void AddWindowInfoRequestedHandler(Interactive target, EventHandler<WindowInfoRequestedEventArgs> handler) =>
+        public static void AddWindowInfoRequestedHandler(Interactive target, EventHandler<WindowInfoRequestedEventArgs> handler)
+        {
             target.AddHandler(WindowInfoRequestedEvent, handler);
+            RepublishWindowInfoBelow(target);
+        }
 
-        public static void RemoveWindowInfoRequestedHandler(Interactive target, EventHandler<WindowInfoRequestedEventArgs> handler) =>
+        public static void RemoveWindowInfoRequestedHandler(Interactive target, EventHandler<WindowInfoRequestedEventArgs> handler)
+        {
             target.RemoveHandler(WindowInfoRequestedEvent, handler);
+            RepublishWindowInfoBelow(target);
+        }
+
+        // The event bubbles, so a handler on a host (a TerminalControl, a window) changes the answers
+        // of every view beneath it. See PublishWindowInfo.
+        private static void RepublishWindowInfoBelow(Interactive target)
+        {
+            if (target is not Visual visual)
+                return;
+
+            foreach (var view in visual.GetSelfAndVisualDescendants().OfType<TerminalView>())
+                view.PublishWindowInfo();
+        }
 
         /// <summary>
         /// A desktop notification requested by the running program (OSC 9 or Kitty OSC 99). The
@@ -298,7 +316,13 @@ namespace Iciclecreek.Terminal
         /// Event raised when window information is requested by the terminal.
         /// The handler should set the response properties on the event args.
         /// </summary>
-        public event EventHandler<WindowInfoRequestedEventArgs>? WindowInfoRequested;
+        public event EventHandler<WindowInfoRequestedEventArgs>? WindowInfoRequested
+        {
+            add { _windowInfoRequested += value; PublishWindowInfo(); }
+            remove { _windowInfoRequested -= value; PublishWindowInfo(); }
+        }
+
+        private EventHandler<WindowInfoRequestedEventArgs>? _windowInfoRequested;
 
 
         private void OnTerminalTitleChanged(object? sender, XT.Events.TerminalEvents.TitleChangeEventArgs e)
@@ -608,6 +632,11 @@ namespace Iciclecreek.Terminal
         /// unchanged; a wedged one costs a pause instead of the session. Leaving <c>Handled</c> false
         /// on timeout is not a guess -- it is the answer the emulator already documents for a terminal
         /// that cannot say, and a wrong number would be worse than none.</para>
+        /// <para>Bounded per query was still not enough: the lock is held for the whole chunk, so a
+        /// chunk of N queries froze a UI thread waiting on the lock for N patiences. So the waiting
+        /// is gone from the normal path. The UI thread asks the handlers ahead of time and publishes
+        /// their answers (<see cref="PublishWindowInfo"/>), and the reader answers from those. The
+        /// wait survives only for a view that has never been in a tree, capped at one per chunk.</para>
         /// </remarks>
         private void OnTerminalWindowInfoRequested(object? sender, XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e)
         {
@@ -620,7 +649,7 @@ namespace Iciclecreek.Terminal
             // thread, and the SAME numbers the emulator tiles images by, which is the consistency
             // the placeholder path depends on. A host cannot meaningfully override the view's real
             // pixel metrics, so these no longer consult handlers; position, titles and state are
-            // genuinely the host's to answer and keep the dispatched path below.
+            // genuinely the host's to answer, and are answered from what the host last said.
             switch (e.Request)
             {
                 case XT.Common.WindowInfoRequest.CellSizePixels:
@@ -639,6 +668,25 @@ namespace Iciclecreek.Terminal
 
             if (!Dispatcher.UIThread.CheckAccess())
             {
+                // The answers the UI thread last published, read without waiting. Waiting is what
+                // froze the UI: this runs inside lock (_terminalLock), and a UI thread blocked on
+                // that lock -- ClearScreen, ArrangeOverride on every grid resize -- cannot run the
+                // job this would wait for, so each query in the chunk sat out its full patience.
+                // `yes $'\e[13t'` was minutes of frozen UI.
+                if (PublishedWindowInfo(e.Request) is { } published)
+                {
+                    CopyWindowInfo(published, e);
+                    RefreshWindowInfoSoon();
+                    return;
+                }
+
+                // Nothing published yet: the view has never been in a tree. Ask the UI thread, but
+                // once one query in this chunk has timed out, answer the rest "cannot say" at once.
+                // The UI thread is evidently not coming, and the patience is per query while the
+                // chunk can hold thousands of them.
+                if (_windowInfoTimedOut)
+                    return;
+
                 // Whoever gets here first wins, and the loser does nothing.
                 //
                 // Timing out does not cancel the queued job -- the UI thread runs it whenever it
@@ -656,7 +704,10 @@ namespace Iciclecreek.Terminal
                 });
 
                 if (!pending.GetTask().Wait(WindowInfoPatience) && Interlocked.Exchange(ref claim, 1) == 0)
+                {
+                    _windowInfoTimedOut = true;
                     Debug.WriteLine("[TerminalView] window-info query timed out; answering unhandled");
+                }
 
                 return;
             }

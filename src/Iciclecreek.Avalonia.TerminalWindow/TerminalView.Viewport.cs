@@ -388,34 +388,134 @@ namespace Iciclecreek.Terminal
         }
 
 
-        private void AnswerWindowInfo(XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e)
+        private void AnswerWindowInfo(XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e) =>
+            CopyWindowInfo(AskHost(e.Request), e);
+
+        private WindowInfoRequestedEventArgs AskHost(XT.Common.WindowInfoRequest request)
         {
+            // Raise routed event so any parent can handle it without custom plumbing.
+            var args = new WindowInfoRequestedEventArgs(request)
             {
-                // Raise routed event so any parent can handle it without custom plumbing.
-                var args = new WindowInfoRequestedEventArgs(e.Request)
-                {
-                    RoutedEvent = WindowInfoRequestedEvent
-                };
+                RoutedEvent = WindowInfoRequestedEvent
+            };
 
-                RaiseEvent(args);
+            RaiseEvent(args);
 
-                // Keep CLR event for back-compat.
-                WindowInfoRequested?.Invoke(this, args);
+            // Keep CLR event for back-compat.
+            _windowInfoRequested?.Invoke(this, args);
+            return args;
+        }
 
-                // Copy response data back to the terminal's event args
-                if (args.Handled)
-                {
-                    e.Handled = true;
-                    e.IsIconified = args.IsIconified;
-                    e.X = args.X;
-                    e.Y = args.Y;
-                    e.WidthPixels = args.WidthPixels;
-                    e.HeightPixels = args.HeightPixels;
-                    e.CellWidth = args.CellWidth;
-                    e.CellHeight = args.CellHeight;
-                    e.Title = args.Title;
-                }
+        private static void CopyWindowInfo(WindowInfoRequestedEventArgs args, XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e)
+        {
+            // Copy response data back to the terminal's event args
+            if (args.Handled)
+            {
+                e.Handled = true;
+                e.IsIconified = args.IsIconified;
+                e.X = args.X;
+                e.Y = args.Y;
+                e.WidthPixels = args.WidthPixels;
+                e.HeightPixels = args.HeightPixels;
+                e.CellWidth = args.CellWidth;
+                e.CellHeight = args.CellHeight;
+                e.Title = args.Title;
             }
+        }
+
+        /// <summary>The host's answers to the window queries the reader cannot wait for, or null before the first publish.</summary>
+        private volatile PublishedWindowAnswers? _windowInfo;
+
+        private sealed record PublishedWindowAnswers(
+            WindowInfoRequestedEventArgs State,
+            WindowInfoRequestedEventArgs Position,
+            WindowInfoRequestedEventArgs IconTitle);
+
+        /// <summary>Set when a window query in the chunk being written timed out; reset per chunk.</summary>
+        private bool _windowInfoTimedOut;
+
+        private int _windowInfoRefreshPending;
+
+        /// <summary>The window this view's published answers follow, while it is in one.</summary>
+        private TopLevel? _windowInfoSource;
+
+        private WindowInfoRequestedEventArgs? PublishedWindowInfo(XT.Common.WindowInfoRequest request) =>
+            _windowInfo is not { } answers ? null : request switch
+            {
+                XT.Common.WindowInfoRequest.State => answers.State,
+                XT.Common.WindowInfoRequest.Position => answers.Position,
+                XT.Common.WindowInfoRequest.IconTitle => answers.IconTitle,
+                _ => null,
+            };
+
+        /// <summary>
+        /// Asks the handlers for the window state, position and icon title, and publishes their
+        /// answers for the reader thread to give without waiting.
+        /// </summary>
+        /// <remarks>
+        /// <para>What <see cref="PublishCellPixelSize"/> does for pixel geometry, for the queries only
+        /// the host can answer (CSI 11, 13 and 20 t). The emulator answers the rest -- size in
+        /// characters, the window title -- from its own state and never asks.</para>
+        /// <para>Taken whenever an answer can have changed: on attach, when the window moves, changes
+        /// state or retitles, and when a handler comes or goes. A host that answers from something
+        /// else is caught up after each query by <see cref="RefreshWindowInfoSoon"/>, so at worst it
+        /// is one query behind. A fresh args object per answer, never touched again once published,
+        /// is what makes reading it from another thread safe.</para>
+        /// </remarks>
+        private void PublishWindowInfo()
+        {
+            if (_windowInfoSource is null || !Dispatcher.UIThread.CheckAccess())
+                return;
+
+            _windowInfo = new PublishedWindowAnswers(
+                AskHost(XT.Common.WindowInfoRequest.State),
+                AskHost(XT.Common.WindowInfoRequest.Position),
+                AskHost(XT.Common.WindowInfoRequest.IconTitle));
+        }
+
+        /// <summary>Re-publishes after the reader answered from the snapshot; one pending at a time however many queries arrive.</summary>
+        private void RefreshWindowInfoSoon()
+        {
+            if (Interlocked.Exchange(ref _windowInfoRefreshPending, 1) == 0)
+                Dispatcher.UIThread.Post(() =>
+                {
+                    Volatile.Write(ref _windowInfoRefreshPending, 0);
+                    PublishWindowInfo();
+                });
+        }
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+
+            _windowInfoSource = TopLevel.GetTopLevel(this);
+            if (_windowInfoSource is WindowBase window)
+                window.PositionChanged += OnWindowInfoSourceMoved;
+            if (_windowInfoSource is not null)
+                _windowInfoSource.PropertyChanged += OnWindowInfoSourcePropertyChanged;
+
+            PublishWindowInfo();
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+
+            // The last answers stay published: a view out of the tree (a hidden tab) still gets
+            // queried, and what its window last said beats waiting on a lock-blocked UI thread.
+            if (_windowInfoSource is WindowBase window)
+                window.PositionChanged -= OnWindowInfoSourceMoved;
+            if (_windowInfoSource is not null)
+                _windowInfoSource.PropertyChanged -= OnWindowInfoSourcePropertyChanged;
+            _windowInfoSource = null;
+        }
+
+        private void OnWindowInfoSourceMoved(object? sender, PixelPointEventArgs e) => PublishWindowInfo();
+
+        private void OnWindowInfoSourcePropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == Window.WindowStateProperty || e.Property == Window.TitleProperty)
+                PublishWindowInfo();
         }
 
         /// <summary>

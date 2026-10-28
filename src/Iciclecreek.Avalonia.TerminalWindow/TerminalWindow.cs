@@ -82,6 +82,12 @@ namespace Iciclecreek.Terminal
                 nameof(VerbatimCommandLine),
                 defaultValue: false);
 
+        /// <inheritdoc cref="TerminalView.UseAsyncIoProperty"/>
+        public static readonly StyledProperty<bool> UseAsyncIoProperty =
+            AvaloniaProperty.Register<TerminalWindow, bool>(
+                nameof(UseAsyncIo),
+                defaultValue: false);
+
         /// <inheritdoc cref="TerminalView.EnvironmentVariablesProperty"/>
         public static readonly StyledProperty<IDictionary<string, string>?> EnvironmentVariablesProperty =
             AvaloniaProperty.Register<TerminalWindow, IDictionary<string, string>?>(
@@ -427,6 +433,13 @@ namespace Iciclecreek.Terminal
         {
             get => GetValue(VerbatimCommandLineProperty);
             set => SetValue(VerbatimCommandLineProperty, value);
+        }
+
+        /// <inheritdoc cref="TerminalView.UseAsyncIoProperty"/>
+        public bool UseAsyncIo
+        {
+            get => GetValue(UseAsyncIoProperty);
+            set => SetValue(UseAsyncIoProperty, value);
         }
 
         /// <inheritdoc cref="TerminalView.EnvironmentVariablesProperty"/>
@@ -777,6 +790,7 @@ namespace Iciclecreek.Terminal
             _terminalControl.Bind(TerminalControl.OutputReceivedOnReadTaskProperty, this.GetObservable(OutputReceivedOnReadTaskProperty));
             _terminalControl.Bind(TerminalControl.AutoScrollToBottomProperty, this.GetObservable(AutoScrollToBottomProperty));
             _terminalControl.Bind(TerminalControl.VerbatimCommandLineProperty, this.GetObservable(VerbatimCommandLineProperty));
+            _terminalControl.Bind(TerminalControl.UseAsyncIoProperty, this.GetObservable(UseAsyncIoProperty));
             _terminalControl.Bind(TerminalControl.EnvironmentVariablesProperty, this.GetObservable(EnvironmentVariablesProperty));
             _terminalControl.Bind(TerminalControl.TextDecorationsProperty, this.GetObservable(TextDecorationsProperty));
             _terminalControl.Bind(TerminalControl.CursorColorProperty, this.GetObservable(CursorColorProperty));

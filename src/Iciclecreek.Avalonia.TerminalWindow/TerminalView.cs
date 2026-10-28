@@ -1107,6 +1107,31 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
+        /// <see langword="true"/> to spawn the process with Porta.Pty's async I/O, so the view's reads can be
+        /// cancelled. Read at launch; a running process keeps the mode it was started in.
+        /// </summary>
+        /// <remarks>
+        /// <para>What this buys is a lossless <see cref="DetachConnection"/>. A blocking read cannot be
+        /// stopped without closing the stream being handed over, so the detached view's reader stays parked
+        /// in it, and when the process next speaks it takes that chunk. Before the new owner attaches the
+        /// chunk is parked and replayed; after, it is dropped -- see the KNOWN LIMITATION there. A cancellable
+        /// read is unparked by the detach itself, having consumed nothing.</para>
+        /// <para>Off by default, so a launch is exactly what it was. On Linux it needs kernel 5.3 or newer
+        /// (pidfd_open); where the PTY layer cannot provide it, the launch fails and says so.</para>
+        /// </remarks>
+        public static readonly StyledProperty<bool> UseAsyncIoProperty =
+            AvaloniaProperty.Register<TerminalView, bool>(
+                nameof(UseAsyncIo),
+                defaultValue: false);
+
+        /// <inheritdoc cref="UseAsyncIoProperty"/>
+        public bool UseAsyncIo
+        {
+            get => GetValue(UseAsyncIoProperty);
+            set => SetValue(UseAsyncIoProperty, value);
+        }
+
+        /// <summary>
         /// Extra environment variables for the launched process. Null (default) launches it with the host's
         /// environment unchanged.
         /// </summary>
