@@ -104,6 +104,42 @@ public class PtyOptionsTests
         }
     }
 
+    // ---- UseAsyncIo ------------------------------------------------------------------------------
+
+    /// <summary>Off everywhere by default, so a launch is exactly what it was before the property existed.</summary>
+    [AvaloniaTest]
+    public void Async_io_is_off_by_default()
+    {
+        var window = new TerminalWindow { Process = "" };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(new TerminalView().UseAsyncIo, Is.False, "view");
+            Assert.That(new TerminalControl().UseAsyncIo, Is.False, "control");
+            Assert.That(window.UseAsyncIo, Is.False, "window");
+        });
+    }
+
+    /// <summary>Set on a window, it reaches the view that builds the launch options, through both hops.</summary>
+    [AvaloniaTest]
+    public void UseAsyncIo_set_on_a_window_reaches_the_view()
+    {
+        var window = new TerminalWindow { Process = "", UseAsyncIo = true }.Realise();
+
+        try
+        {
+            Assert.Multiple(() =>
+            {
+                Assert.That(window.Control().UseAsyncIo, Is.True, "first hop");
+                Assert.That(window.Control().View().UseAsyncIo, Is.True, "second hop");
+            });
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
     // ---- EnvironmentVariables --------------------------------------------------------------------
 
     /// <summary>

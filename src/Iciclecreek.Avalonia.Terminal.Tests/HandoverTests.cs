@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Avalonia.Headless.NUnit;
 using NUnit.Framework;
 
@@ -135,5 +136,85 @@ public class HandoverTests
                 "the stale view must not have painted a chunk it no longer owned");
         }
         finally { w1.Close(); w2.Close(); }
+    }
+
+    // ---- a view's own spawn: UseAsyncIo -------------------------------------------------------
+
+    /// <summary>
+    /// A process the view SPAWNED, handed back and forth while it writes, arrives whole and in order.
+    /// </summary>
+    /// <remarks>
+    /// <para>The guarantee above was only reachable through AttachConnection: LaunchProcess spawned
+    /// blocking-mode, so a view's own process was exactly the case that could still drop a chunk.
+    /// UseAsyncIo is the opt-in. The output comes in bursts, so most handovers land while the
+    /// outgoing reader is parked -- the window a blocking reader steals from after the new owner has
+    /// attached.</para>
+    /// <para>Collected on the read task, in one sink shared by both views, so the sink's order IS
+    /// the stream order: a cancellable detach waits for the outgoing loop before the next attach.</para>
+    /// </remarks>
+    [AvaloniaTest]
+    [Platform(Exclude = "Win", Reason = "uses sh; the handover under test is not platform-specific")]
+    public async Task A_spawned_process_handed_over_under_load_loses_nothing()
+    {
+        const int lines = 4000;
+        var seen = new System.Text.StringBuilder();
+        string Seen() { lock (seen) return seen.ToString(); }
+
+        (TerminalView view, Window window) Make()
+        {
+            var view = new TerminalView { Process = "", UseAsyncIo = true, OutputReceivedOnReadTask = true };
+            view.OutputReceived += (_, e) => { lock (seen) seen.Append(e.Output); };
+            var window = new Window { Width = 800, Height = 600, Content = view };
+            window.Show();
+            window.UpdateLayout();
+
+            // Loaded is posted, and OnLoaded launches Process whenever no connection is attached --
+            // which, mid-handover, is a detached view whose Process the launch below has set. Let it
+            // run now, while Process is still empty, or it starts a second process part-way through.
+            Dispatcher.UIThread.RunJobs();
+            Assert.That(view.IsLoaded, Is.True);
+            return (view, window);
+        }
+
+        var (view1, w1) = Make();
+        var (view2, w2) = Make();
+        Porta.Pty.IPtyConnection? connection = null;
+        try
+        {
+            await view1.LaunchProcess(null, "sh", "-c",
+                $"i=0; while [ $i -lt {lines} ]; do echo $i; i=$((i+1)); [ $((i % 100)) -eq 0 ] && sleep 0.01; done; echo END; sleep 5");
+
+            var (from, to) = (view1, view2);
+            var handovers = 0;
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!Seen().Contains("END") && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(25);
+                connection = from.DetachConnection();
+                Assert.That(connection, Is.Not.Null, "the process is still running");
+                Assert.That(connection!.SupportsCancellableRead, Is.True, "UseAsyncIo reached the spawn");
+                to.AttachConnection(connection);
+                (from, to) = (to, from);
+                handovers++;
+            }
+
+            Assert.That(Seen(), Does.Contain("END"), "the process finished writing within the deadline");
+            Assert.That(handovers, Is.GreaterThan(5), "the output was handed over while it was being written");
+
+            var numbers = System.Text.RegularExpressions.Regex.Matches(Seen(), @"\d+").Select(m => int.Parse(m.Value)).ToList();
+            var firstWrong = Enumerable.Range(0, lines).FirstOrDefault(i => i >= numbers.Count || numbers[i] != i, -1);
+            Assert.That(firstWrong, Is.EqualTo(-1),
+                $"every line once, in order, across {handovers} handovers; {numbers.Count} numbers seen, first wrong at index {firstWrong}: " +
+                string.Join(" ", numbers.Skip(Math.Max(0, firstWrong - 3)).Take(8)));
+            Assert.That(numbers.Count, Is.EqualTo(lines));
+        }
+        finally
+        {
+            connection = view1.DetachConnection() ?? view2.DetachConnection() ?? connection;
+            connection?.Kill();
+            connection?.Dispose();
+            w1.Close();
+            w2.Close();
+        }
     }
 }

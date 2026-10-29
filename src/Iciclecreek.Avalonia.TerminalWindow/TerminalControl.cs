@@ -78,6 +78,12 @@ namespace Iciclecreek.Terminal
                 nameof(VerbatimCommandLine),
                 defaultValue: false);
 
+        /// <inheritdoc cref="TerminalView.UseAsyncIoProperty"/>
+        public static readonly StyledProperty<bool> UseAsyncIoProperty =
+            AvaloniaProperty.Register<TerminalControl, bool>(
+                nameof(UseAsyncIo),
+                defaultValue: false);
+
         /// <inheritdoc cref="TerminalView.EnvironmentVariablesProperty"/>
         public static readonly StyledProperty<IDictionary<string, string>?> EnvironmentVariablesProperty =
             AvaloniaProperty.Register<TerminalControl, IDictionary<string, string>?>(
@@ -733,6 +739,13 @@ namespace Iciclecreek.Terminal
         {
             get => GetValue(VerbatimCommandLineProperty);
             set => SetValue(VerbatimCommandLineProperty, value);
+        }
+
+        /// <inheritdoc cref="TerminalView.UseAsyncIoProperty"/>
+        public bool UseAsyncIo
+        {
+            get => GetValue(UseAsyncIoProperty);
+            set => SetValue(UseAsyncIoProperty, value);
         }
 
         /// <inheritdoc cref="TerminalView.EnvironmentVariablesProperty"/>

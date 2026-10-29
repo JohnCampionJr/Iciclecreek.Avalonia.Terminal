@@ -249,7 +249,8 @@ namespace Iciclecreek.Terminal
 
             // KNOWN LIMITATION -- for BLOCKING-mode connections only, as of issue #123's fix.
             // A connection whose SupportsCancellableRead is true has no such window: its loop was
-            // cancelled and awaited above, consuming nothing.
+            // cancelled and awaited above, consuming nothing. A view's own spawn gets one by setting
+            // UseAsyncIo.
             //
             // For the rest: this does not stop the reader. That thread is parked inside a SYNCHRONOUS Read on the
             // connection's stream, and the only way to make such a read return is to close the stream
@@ -319,7 +320,8 @@ namespace Iciclecreek.Terminal
                     Rows = _terminal.Rows,
                     Cwd = workingDirectory,
                     App = processToLaunch,
-                    VerbatimCommandLine = VerbatimCommandLine
+                    VerbatimCommandLine = VerbatimCommandLine,
+                    UseAsyncIo = UseAsyncIo
                 };
 
                 // Merged by the PTY layer into the environment the child would otherwise inherit, so a caller
@@ -514,6 +516,9 @@ namespace Iciclecreek.Terminal
                 // this flag is up the renderer prefers the last COMPLETE capture over the live
                 // buffer; once the write finishes, live is quiescent and serves as before.
                 _bufferWriteInProgress = true;
+
+                // The cap on waiting for window queries is per chunk. See OnTerminalWindowInfoRequested.
+                _windowInfoTimedOut = false;
 
                 try
                 {
