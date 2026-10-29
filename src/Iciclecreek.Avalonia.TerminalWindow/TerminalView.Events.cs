@@ -327,7 +327,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalTitleChanged(object? sender, XT.Events.TerminalEvents.TitleChangeEventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
 
                 var args = new TitleChangedEventArgs(e.Title)
@@ -370,7 +370,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowMoved(object? sender, XT.Events.TerminalEvents.WindowMovedEventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -485,7 +485,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowMinimized(object? sender, EventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -505,7 +505,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowMaximized(object? sender, EventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -525,7 +525,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowRestored(object? sender, EventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -585,7 +585,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowFullscreened(object? sender, EventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -614,29 +614,29 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
-        /// Answers a program asking about the window — its size in cells or pixels, its position, or
-        /// its title — from the UI thread, without letting the reader wait on it for ever.
+        /// Answers a program asking about the window -- its size in pixels, its position, its state or
+        /// its icon title. Off the UI thread the answer is what the UI thread last published; the reader
+        /// waits on the UI thread only when there is nothing current to give, and then at most once per
+        /// chunk.
         /// </summary>
         /// <remarks>
-        /// <para>The answer genuinely needs the UI thread -- only it knows the window -- and the
-        /// emulator reads <c>e.Handled</c> the moment this returns, to decide whether it has a reply
-        /// to send. So it cannot be posted: Post returns immediately, Handled is still false, and the
-        /// answer is written correctly, on the UI thread, after the only reader of it has moved on.
-        /// Every window query then goes unanswered and the program asking waits out its timeout.</para>
-        /// <para>But it cannot block for ever either. This is raised from <c>Terminal.Write</c>, which
-        /// the read loop calls inside <c>lock (_terminalLock)</c> on the pty reader thread, and the UI
-        /// thread takes that same lock in <see cref="ClearScreen"/>, <see cref="CurrentLineText"/> and
-        /// <c>WriteOwnLine</c>. An unbounded wait is a DEADLOCK, not a stall: the application freezes
-        /// with no exception to look for.</para>
-        /// <para>So it is bounded. An idle UI thread answers in microseconds and the normal path is
-        /// unchanged; a wedged one costs a pause instead of the session. Leaving <c>Handled</c> false
-        /// on timeout is not a guess -- it is the answer the emulator already documents for a terminal
-        /// that cannot say, and a wrong number would be worse than none.</para>
-        /// <para>Bounded per query was still not enough: the lock is held for the whole chunk, so a
-        /// chunk of N queries froze a UI thread waiting on the lock for N patiences. So the waiting
-        /// is gone from the normal path. The UI thread asks the handlers ahead of time and publishes
-        /// their answers (<see cref="PublishWindowInfo"/>), and the reader answers from those. The
-        /// wait survives only for a view that has never been in a tree, capped at one per chunk.</para>
+        /// <para>The emulator reads <c>e.Handled</c> the moment this returns, so the answer cannot be
+        /// posted -- Post returns before the handler runs, and a query answered after its only reader
+        /// moved on goes unanswered.</para>
+        /// <para>Nor can the reader wait on the UI thread, which is how this used to work. This is raised
+        /// from <c>Terminal.Write</c>, which the read loop calls inside <c>lock (_terminalLock)</c>, and
+        /// the UI thread takes that lock in <see cref="ClearScreen"/>, <see cref="CurrentLineText"/>,
+        /// <c>WriteOwnLine</c> and ArrangeOverride. A UI thread waiting there cannot run the job being
+        /// waited for. Unbounded, that was a deadlock; bounded per query, a chunk of N queries froze the
+        /// UI for N patiences -- 20 queries, ~4.9 s.</para>
+        /// <para>So the UI thread asks the handlers ahead of time and publishes their answers
+        /// (<see cref="PublishWindowInfo"/>), and the reader gives those. Two cases still wait, bounded
+        /// by <see cref="WindowInfoPatience"/> and capped at one timeout per chunk: a view never yet in a
+        /// tree, and a change this reader posted -- a new title, a move, an iconify -- that the UI thread
+        /// has not applied yet (<see cref="PostWindowChange"/>). Then the queued job runs after that
+        /// change, as before, and an idle UI thread answers with the new value. Leaving
+        /// <c>Handled</c> false on timeout is the emulator's documented "cannot say", and a wrong
+        /// number would be worse than none.</para>
         /// </remarks>
         private void OnTerminalWindowInfoRequested(object? sender, XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e)
         {
@@ -673,14 +673,18 @@ namespace Iciclecreek.Terminal
                 // that lock -- ClearScreen, ArrangeOverride on every grid resize -- cannot run the
                 // job this would wait for, so each query in the chunk sat out its full patience.
                 // `yes $'\e[13t'` was minutes of frozen UI.
-                if (PublishedWindowInfo(e.Request) is { } published)
+                //
+                // Not while a change this reader posted is still on its way: `\e]0;new\a\e[20t` in
+                // one chunk asks before the new title reaches the window, and the published answer is
+                // the old one. The queued path below runs after the change, so it gets it right.
+                if (WindowInfoIsCurrent && PublishedWindowInfo(e.Request) is { } published)
                 {
                     CopyWindowInfo(published, e);
                     RefreshWindowInfoSoon();
                     return;
                 }
 
-                // Nothing published yet: the view has never been in a tree. Ask the UI thread, but
+                // Nothing current: never published, or a change is still queued. Ask the UI thread, but
                 // once one query in this chunk has timed out, answer the rest "cannot say" at once.
                 // The UI thread is evidently not coming, and the patience is per query while the
                 // chunk can hold thousands of them.

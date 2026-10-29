@@ -276,6 +276,72 @@ public class WindowQueryTests
     }
 
     /// <summary>
+    /// A change and the query about it in ONE chunk, through a real TerminalWindow at its defaults --
+    /// which turns the window queries on. The query arrives before the posted change reaches the
+    /// window, so the answer published earlier is stale; the reply must still carry the new value.
+    /// </summary>
+    [TestCase("]0;new\a", "[20t", "]Lnew\u001b\\", false, TestName = "retitle, then ask the icon title")]
+    [TestCase("[2t", "[11t", "[2t", true, TestName = "iconify, then ask the state")]
+    [AvaloniaTest]
+    public async Task A_query_after_a_change_in_the_same_chunk_sees_the_change(
+        string change, string query, string reply, bool allowWindowOps)
+    {
+        var window = new TerminalWindow { Process = "", AllowWindowOps = allowWindowOps }.Realise();
+        try
+        {
+            var output = new PushStream();
+            var pty = new RecordingConnection(output);
+            window.AttachConnection(pty);
+
+            output.Push(Esc + change + Esc + query);
+
+            Assert.That(await PtyWaits.AwaitOutput(pty), Is.EqualTo(Esc + reply));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    /// <summary>
+    /// A host that answers from its OWN state -- a tab label kept up to date from TitleChanged, not
+    /// the window's Title -- changes nothing the view watches. The answer is re-published after the
+    /// change anyway, so the next query has it.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task A_host_answering_from_its_own_state_is_current_after_the_change()
+    {
+        var view = new TerminalView { Process = "" };
+        var window = new Window { Width = 900, Height = 400, Content = view };
+        window.Show();
+        window.UpdateLayout();
+        try
+        {
+            var label = "old";
+            TerminalView.AddTitleChangedHandler(view, (_, e) => label = e.Title);
+            TerminalView.AddWindowInfoRequestedHandler(view, (_, e) => { e.Title = label; e.Handled = true; });
+            view.Terminal.Options.WindowOptions.GetIconTitle = true;
+
+            var output = new PushStream();
+            var pty = new RecordingConnection(output);
+            view.AttachConnection(pty);
+
+            output.Push(Esc + "]0;new\a");
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (label != "new" && DateTime.UtcNow < deadline)
+                await Task.Delay(10);
+            Assert.That(label, Is.EqualTo("new"), "the host saw the title change");
+
+            output.Push(Esc + "[20t");
+            Assert.That(await PtyWaits.AwaitOutput(pty), Is.EqualTo(Esc + "]Lnew" + Esc + "\\"));
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
+
+    /// <summary>
     /// The gates are the emulator's and keep their defaults: position, state and both titles are off
     /// until a host turns them on, size in characters is on. A device-status query closes the chunk
     /// so "nothing else was sent" is a fact about the reply stream, not a timeout.

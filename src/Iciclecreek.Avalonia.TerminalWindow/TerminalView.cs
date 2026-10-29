@@ -3394,7 +3394,11 @@ namespace Iciclecreek.Terminal
             });
         }
 
-        /// <summary>How long the reader waits for the UI thread to answer a window query.</summary>
+        /// <summary>
+        /// How long the reader waits for the UI thread to answer a window query it has no current
+        /// published answer for -- before the first publish, or while a change it posted is queued.
+        /// At most one such wait per chunk.
+        /// </summary>
         /// <remarks>
         /// Generous for a handler that only reads window state, and short enough that a wedged UI
         /// thread costs a pause rather than the session. See <see cref="OnTerminalWindowInfoRequested"/>.

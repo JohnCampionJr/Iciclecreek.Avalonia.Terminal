@@ -457,7 +457,8 @@ namespace Iciclecreek.Terminal
         /// the host can answer (CSI 11, 13 and 20 t). The emulator answers the rest -- size in
         /// characters, the window title -- from its own state and never asks.</para>
         /// <para>Taken whenever an answer can have changed: on attach, when the window moves, changes
-        /// state or retitles, and when a handler comes or goes. A host that answers from something
+        /// state or retitles, when a handler comes or goes, and after each change the program asks for
+        /// (<see cref="PostWindowChange"/>). A host that answers from something
         /// else is caught up after each query by <see cref="RefreshWindowInfoSoon"/>, so at worst it
         /// is one query behind. A fresh args object per answer, never touched again once published,
         /// is what makes reading it from another thread safe.</para>
@@ -471,6 +472,36 @@ namespace Iciclecreek.Terminal
                 AskHost(XT.Common.WindowInfoRequest.State),
                 AskHost(XT.Common.WindowInfoRequest.Position),
                 AskHost(XT.Common.WindowInfoRequest.IconTitle));
+        }
+
+        private int _windowChangesPosted;
+        private int _windowChangesPublished;
+
+        /// <summary>False while a change the reader posted has not yet been applied and re-published.</summary>
+        private bool WindowInfoIsCurrent =>
+            Volatile.Read(ref _windowChangesPublished) == Volatile.Read(ref _windowChangesPosted);
+
+        /// <summary>
+        /// Posts something from the program that can change a window answer -- a title, a move, an
+        /// iconify -- and re-publishes once the host has acted on it.
+        /// </summary>
+        /// <remarks>
+        /// Counted on the way in and marked done after the publish, in the same job, so a query arriving
+        /// in between knows the published answers are stale. The dispatcher runs posts in order, so
+        /// marking this one done covers every change posted before it.
+        /// </remarks>
+        private void PostWindowChange(Action change)
+        {
+            var posted = Interlocked.Increment(ref _windowChangesPosted);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { change(); }
+                finally
+                {
+                    PublishWindowInfo();
+                    Volatile.Write(ref _windowChangesPublished, posted);
+                }
+            });
         }
 
         /// <summary>Re-publishes after the reader answered from the snapshot; one pending at a time however many queries arrive.</summary>
