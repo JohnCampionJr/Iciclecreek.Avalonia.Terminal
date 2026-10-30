@@ -43,10 +43,24 @@
     <PackageReference Include="Wcwidth" Version="4.0.1" />
   </ItemGroup>
   
+  <!-- Opt-in: -p:XTermSource=<path to an XTerm.NET checkout> builds against that source instead of
+       the XTerm.NET package, leaving Porta.Pty on its package; -p:LocalTerminal=true (Confetty's
+       switch, which reaches this project as a global property or from the environment) means the
+       XTerm.NET clone beside this one. Neither set, nothing changes. -->
+  <PropertyGroup Condition="'$(XTermSource)' == '' and '$(LocalTerminal)' == 'true'">
+    <XTermSource>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../XTerm.NET'))</XTermSource>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(SolutionName)' != 'Iciclecreek.Avalonia.TerminalWindow.Local'">
     <PackageReference Include="Porta.Pty" Version="2.2.3" />
-    <PackageReference Include="XTerm.NET" Version="3.0.0" />
+    <PackageReference Include="XTerm.NET" Version="3.0.0" Condition="'$(XTermSource)' == ''" />
+    <ProjectReference Include="$(XTermSource)/src/XTerm.NET/XTerm.NET.csproj" Condition="'$(XTermSource)' != ''" />
   </ItemGroup>
+
+  <Target Name="CheckXTermSource" BeforeTargets="CollectPackageReferences;ResolveProjectReferences"
+          Condition="'$(XTermSource)' != '' and !Exists('$(XTermSource)/src/XTerm.NET/XTerm.NET.csproj')">
+    <Error Text="XTermSource is '$(XTermSource)', but there is no src/XTerm.NET/XTerm.NET.csproj under it." />
+  </Target>
 
   <ItemGroup Condition="'$(SolutionName)' == 'Iciclecreek.Avalonia.TerminalWindow.Local'">
     <ProjectReference Include="$(MSBuildThisFileDirectory)../../../Porta.Pty/src/Porta.Pty/Porta.Pty.csproj" />
