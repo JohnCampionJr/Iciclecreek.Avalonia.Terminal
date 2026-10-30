@@ -43,11 +43,12 @@
     <PackageReference Include="Wcwidth" Version="4.0.1" />
   </ItemGroup>
   
-  <!-- Opt-in: -p:XTermSource=<path to an XTerm.NET checkout> builds against that source instead of
-       the XTerm.NET package, leaving Porta.Pty on its package; -p:LocalTerminal=true (Confetty's
-       switch, which reaches this project as a global property or from the environment) means the
-       XTerm.NET clone beside this one. Neither set, nothing changes. -->
-  <PropertyGroup Condition="'$(XTermSource)' == '' and '$(LocalTerminal)' == 'true'">
+  <!-- -p:XTermSource=<path to an XTerm.NET checkout> builds against that source instead of the
+       XTerm.NET package, leaving Porta.Pty on its package. Otherwise the XTerm.NET checkout beside
+       this one is used when there is one, as in Confetty, which keeps both as submodules side by
+       side and can't hand this project a property for its restore; -p:LocalTerminal=true requires
+       it, and -p:LocalTerminal=false (Confetty's switch) takes the package regardless. -->
+  <PropertyGroup Condition="'$(XTermSource)' == '' and ('$(LocalTerminal)' == 'true' or ('$(LocalTerminal)' != 'false' and Exists('$(MSBuildThisFileDirectory)../../../XTerm.NET/src/XTerm.NET/XTerm.NET.csproj')))">
     <XTermSource>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../XTerm.NET'))</XTermSource>
   </PropertyGroup>
 
