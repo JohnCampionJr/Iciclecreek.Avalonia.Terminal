@@ -64,6 +64,82 @@ namespace Iciclecreek.Terminal
                 ViewportY = max;
         }
 
+        /// <summary>Scroll the scrollback up by one screenful. Clamped at the top.</summary>
+        /// <remarks>
+        /// What Shift+Page Up does (Cmd+Page Up on macOS); public so a host can put the same action on a
+        /// menu or a button. Nothing happens in the alternate buffer, which has no scrollback to show.
+        /// </remarks>
+        public void ScrollPageUp() => ScrollLines(-Math.Max(1, ViewportLines));
+
+        /// <summary>Scroll the scrollback down by one screenful. Clamped at the live output.</summary>
+        /// <remarks>What Shift+Page Down does (Cmd+Page Down on macOS).</remarks>
+        public void ScrollPageDown() => ScrollLines(Math.Max(1, ViewportLines));
+
+        /// <summary>Scroll to the oldest line in the scrollback.</summary>
+        /// <remarks>What Ctrl+Shift+Home does (Cmd+Home on macOS).</remarks>
+        public void ScrollToTop() => ScrollLines(int.MinValue);
+
+        /// <summary>
+        /// Scroll back to the live output. Unlike <see cref="FollowTail"/> this moves the view whether or not
+        /// <see cref="AutoScrollToBottom"/> is on: it is an explicit request, not a resumption.
+        /// </summary>
+        /// <remarks>What Ctrl+Shift+End does (Cmd+End on macOS).</remarks>
+        public void ScrollToBottom() => ScrollLines(int.MaxValue);
+
+        private void ScrollLines(int delta)
+        {
+            if (_terminal == null)
+                return;
+
+            // Saturating rather than overflowing, so the two edge-seekers can hand in the int extremes.
+            long target = (long)ViewportY + delta;
+            int clamped = (int)Math.Clamp(target, 0, Math.Max(0, MaxScrollback));
+            if (clamped != ViewportY)
+                ViewportY = clamped;
+        }
+
+        /// <summary>
+        /// A multiplier on <see cref="FontSize"/>: 1.0 draws at the configured size, 1.2 a fifth larger, and so
+        /// on. Clamped to 0.5–3.0. The grid re-measures and the process is told its new size, exactly as if
+        /// <see cref="FontSize"/> itself had changed.
+        /// </summary>
+        /// <remarks>
+        /// <para>Separate from <see cref="FontSize"/> on purpose. That property is configuration — usually
+        /// template-bound from a <see cref="TerminalControl"/> or a <see cref="TerminalWindow"/> — and a
+        /// keystroke that overwrote it would sever the binding, so the host's next change would never
+        /// arrive. Zoom is view state, like <see cref="ViewportY"/>: it sits on top of whatever the host
+        /// configured and goes back to 1.0 with <see cref="ResetZoom"/>.</para>
+        /// <para>What Ctrl+Plus, Ctrl+Minus and Ctrl+0 drive (Cmd on macOS); see
+        /// <see cref="TerminalKeyGestures"/>.</para>
+        /// </remarks>
+        public double Zoom
+        {
+            get => _zoom;
+            set
+            {
+                var clamped = double.IsNaN(value) ? 1.0 : Math.Clamp(value, MinZoom, MaxZoom);
+                SetAndRaise(ZoomProperty, ref _zoom, clamped);
+            }
+        }
+
+        private double _zoom = 1.0;
+
+        private const double MinZoom = 0.5;
+        private const double MaxZoom = 3.0;
+        private const double ZoomStep = 0.1;
+
+        /// <summary>The font size actually drawn and measured: <see cref="FontSize"/> × <see cref="Zoom"/>.</summary>
+        private double EffectiveFontSize => FontSize * _zoom;
+
+        /// <summary>Make the text a tenth of the configured size larger, up to three times it.</summary>
+        public void ZoomIn() => Zoom = Math.Round(Zoom + ZoomStep, 2);
+
+        /// <summary>Make the text a tenth of the configured size smaller, down to half of it.</summary>
+        public void ZoomOut() => Zoom = Math.Round(Zoom - ZoomStep, 2);
+
+        /// <summary>Back to the configured <see cref="FontSize"/>.</summary>
+        public void ResetZoom() => Zoom = 1.0;
+
         /// <summary>
         /// Searches the scrollback and highlights every match.
         /// </summary>
@@ -312,34 +388,165 @@ namespace Iciclecreek.Terminal
         }
 
 
-        private void AnswerWindowInfo(XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e)
+        private void AnswerWindowInfo(XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e) =>
+            CopyWindowInfo(AskHost(e.Request), e);
+
+        private WindowInfoRequestedEventArgs AskHost(XT.Common.WindowInfoRequest request)
         {
+            // Raise routed event so any parent can handle it without custom plumbing.
+            var args = new WindowInfoRequestedEventArgs(request)
             {
-                // Raise routed event so any parent can handle it without custom plumbing.
-                var args = new WindowInfoRequestedEventArgs(e.Request)
-                {
-                    RoutedEvent = WindowInfoRequestedEvent
-                };
+                RoutedEvent = WindowInfoRequestedEvent
+            };
 
-                RaiseEvent(args);
+            RaiseEvent(args);
 
-                // Keep CLR event for back-compat.
-                WindowInfoRequested?.Invoke(this, args);
+            // Keep CLR event for back-compat.
+            _windowInfoRequested?.Invoke(this, args);
+            return args;
+        }
 
-                // Copy response data back to the terminal's event args
-                if (args.Handled)
-                {
-                    e.Handled = true;
-                    e.IsIconified = args.IsIconified;
-                    e.X = args.X;
-                    e.Y = args.Y;
-                    e.WidthPixels = args.WidthPixels;
-                    e.HeightPixels = args.HeightPixels;
-                    e.CellWidth = args.CellWidth;
-                    e.CellHeight = args.CellHeight;
-                    e.Title = args.Title;
-                }
+        private static void CopyWindowInfo(WindowInfoRequestedEventArgs args, XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e)
+        {
+            // Copy response data back to the terminal's event args
+            if (args.Handled)
+            {
+                e.Handled = true;
+                e.IsIconified = args.IsIconified;
+                e.X = args.X;
+                e.Y = args.Y;
+                e.WidthPixels = args.WidthPixels;
+                e.HeightPixels = args.HeightPixels;
+                e.CellWidth = args.CellWidth;
+                e.CellHeight = args.CellHeight;
+                e.Title = args.Title;
             }
+        }
+
+        /// <summary>The host's answers to the window queries the reader cannot wait for, or null before the first publish.</summary>
+        private volatile PublishedWindowAnswers? _windowInfo;
+
+        private sealed record PublishedWindowAnswers(
+            WindowInfoRequestedEventArgs State,
+            WindowInfoRequestedEventArgs Position,
+            WindowInfoRequestedEventArgs IconTitle);
+
+        /// <summary>Set when a window query in the chunk being written timed out; reset per chunk.</summary>
+        private bool _windowInfoTimedOut;
+
+        private int _windowInfoRefreshPending;
+
+        /// <summary>The window this view's published answers follow, while it is in one.</summary>
+        private TopLevel? _windowInfoSource;
+
+        private WindowInfoRequestedEventArgs? PublishedWindowInfo(XT.Common.WindowInfoRequest request) =>
+            _windowInfo is not { } answers ? null : request switch
+            {
+                XT.Common.WindowInfoRequest.State => answers.State,
+                XT.Common.WindowInfoRequest.Position => answers.Position,
+                XT.Common.WindowInfoRequest.IconTitle => answers.IconTitle,
+                _ => null,
+            };
+
+        /// <summary>
+        /// Asks the handlers for the window state, position and icon title, and publishes their
+        /// answers for the reader thread to give without waiting.
+        /// </summary>
+        /// <remarks>
+        /// <para>What <see cref="PublishCellPixelSize"/> does for pixel geometry, for the queries only
+        /// the host can answer (CSI 11, 13 and 20 t). The emulator answers the rest -- size in
+        /// characters, the window title -- from its own state and never asks.</para>
+        /// <para>Taken whenever an answer can have changed: on attach, when the window moves, changes
+        /// state or retitles, when a handler comes or goes, and after each change the program asks for
+        /// (<see cref="PostWindowChange"/>). A host that answers from something
+        /// else is caught up after each query by <see cref="RefreshWindowInfoSoon"/>, so at worst it
+        /// is one query behind. A fresh args object per answer, never touched again once published,
+        /// is what makes reading it from another thread safe.</para>
+        /// </remarks>
+        private void PublishWindowInfo()
+        {
+            if (_windowInfoSource is null || !Dispatcher.UIThread.CheckAccess())
+                return;
+
+            _windowInfo = new PublishedWindowAnswers(
+                AskHost(XT.Common.WindowInfoRequest.State),
+                AskHost(XT.Common.WindowInfoRequest.Position),
+                AskHost(XT.Common.WindowInfoRequest.IconTitle));
+        }
+
+        private int _windowChangesPosted;
+        private int _windowChangesPublished;
+
+        /// <summary>False while a change the reader posted has not yet been applied and re-published.</summary>
+        private bool WindowInfoIsCurrent =>
+            Volatile.Read(ref _windowChangesPublished) == Volatile.Read(ref _windowChangesPosted);
+
+        /// <summary>
+        /// Posts something from the program that can change a window answer -- a title, a move, an
+        /// iconify -- and re-publishes once the host has acted on it.
+        /// </summary>
+        /// <remarks>
+        /// Counted on the way in and marked done after the publish, in the same job, so a query arriving
+        /// in between knows the published answers are stale. The dispatcher runs posts in order, so
+        /// marking this one done covers every change posted before it.
+        /// </remarks>
+        private void PostWindowChange(Action change)
+        {
+            var posted = Interlocked.Increment(ref _windowChangesPosted);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { change(); }
+                finally
+                {
+                    PublishWindowInfo();
+                    Volatile.Write(ref _windowChangesPublished, posted);
+                }
+            });
+        }
+
+        /// <summary>Re-publishes after the reader answered from the snapshot; one pending at a time however many queries arrive.</summary>
+        private void RefreshWindowInfoSoon()
+        {
+            if (Interlocked.Exchange(ref _windowInfoRefreshPending, 1) == 0)
+                Dispatcher.UIThread.Post(() =>
+                {
+                    Volatile.Write(ref _windowInfoRefreshPending, 0);
+                    PublishWindowInfo();
+                });
+        }
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+
+            _windowInfoSource = TopLevel.GetTopLevel(this);
+            if (_windowInfoSource is WindowBase window)
+                window.PositionChanged += OnWindowInfoSourceMoved;
+            if (_windowInfoSource is not null)
+                _windowInfoSource.PropertyChanged += OnWindowInfoSourcePropertyChanged;
+
+            PublishWindowInfo();
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+
+            // The last answers stay published: a view out of the tree (a hidden tab) still gets
+            // queried, and what its window last said beats waiting on a lock-blocked UI thread.
+            if (_windowInfoSource is WindowBase window)
+                window.PositionChanged -= OnWindowInfoSourceMoved;
+            if (_windowInfoSource is not null)
+                _windowInfoSource.PropertyChanged -= OnWindowInfoSourcePropertyChanged;
+            _windowInfoSource = null;
+        }
+
+        private void OnWindowInfoSourceMoved(object? sender, PixelPointEventArgs e) => PublishWindowInfo();
+
+        private void OnWindowInfoSourcePropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == Window.WindowStateProperty || e.Property == Window.TitleProperty)
+                PublishWindowInfo();
         }
 
         /// <summary>
@@ -605,7 +812,7 @@ namespace Iciclecreek.Terminal
                 System.Globalization.CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight,
                 typeface,
-                FontSize,
+                EffectiveFontSize,
                 Brushes.Black);
 
             _charWidth = _measureText.Width;
@@ -620,6 +827,7 @@ namespace Iciclecreek.Terminal
             // the font manager, and doing that per run per rebuild was measurable next to the draw
             // it precedes.
             _glyphTypefaces.Clear();
+            _fallbackGlyphs.Clear();
 
             PublishCellPixelSize();
         }

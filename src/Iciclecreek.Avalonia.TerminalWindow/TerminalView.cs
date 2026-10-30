@@ -532,6 +532,48 @@ namespace Iciclecreek.Terminal
             => cell.ClusterId == 0 && BlockGlyphs.IsBlock(cell.CodePoint);
 
         /// <summary>
+        /// Whether a cell is one codepoint the primary font has no glyph for, so another font has to
+        /// draw it. Such a cell is a run of its own -- see <see cref="TryBuildFallbackGlyphRun"/>.
+        /// </summary>
+        /// <remarks>
+        /// <para>Inside a longer run it cost the WHOLE run the fast path, and FormattedText then laid
+        /// the run out with each font's own advances: a fallback glyph wider than the cell pushed
+        /// every column after it to the right, and the fallback font's taller line moved the run's
+        /// baseline down. U+23F5 from Segoe UI Symbol is nearly two Consolas cells wide, and Claude
+        /// Code prints two of them in its status line.</para>
+        /// <para>A null map means there is no primary font to fall back FROM -- see
+        /// <see cref="PrimaryGlyphMap"/> -- so no run takes the fast path and nothing is gained by
+        /// splitting.</para>
+        /// </remarks>
+        private static bool NeedsFallback(BufferCell cell, global::Avalonia.Media.Fonts.Tables.Cmap.CharacterToGlyphMap? map)
+        {
+            if (cell.ClusterId != 0 || cell.CodePoint <= 0)
+                return false;
+            if (PrimaryGlyphProbe is { } probe)
+                return !probe(cell.CodePoint);
+            return map is not null && !(map.Value.TryGetGlyph(cell.CodePoint, out var glyph) && glyph != 0);
+        }
+
+        /// <summary>
+        /// The primary font's character map for a style and weight, or null when it cannot map the
+        /// "W" the cell grid is measured from.
+        /// </summary>
+        /// <remarks>
+        /// A font that has no W is not one the grid came from: the headless platform's stand-in maps
+        /// nothing at all, and taking it at its word put every cell in a run of its own.
+        /// </remarks>
+        private global::Avalonia.Media.Fonts.Tables.Cmap.CharacterToGlyphMap? PrimaryGlyphMap(FontStyle style, FontWeight weight)
+            => GlyphTypefaceFor(style, weight)?.CharacterToGlyphMap is { } map && map.TryGetGlyph('W', out var w) && w != 0
+                ? map
+                : null;
+
+        /// <summary>
+        /// Stands in for the primary font when deciding which cells fall back, for tests: the
+        /// headless platform's font maps nothing, so it can never exercise the split. Null in use.
+        /// </summary>
+        internal static Func<int, bool>? PrimaryGlyphProbe;
+
+        /// <summary>
         /// Whether runs may be drawn as pre-shaped glyphs rather than through FormattedText.
         /// </summary>
         /// <remarks>
@@ -564,6 +606,18 @@ namespace Iciclecreek.Terminal
         private readonly Dictionary<(FontStyle Style, FontWeight Weight), GlyphTypeface?> _glyphTypefaces = new();
 
         /// <summary>
+        /// The font and glyph that draw a codepoint the primary font lacks, by codepoint, style and
+        /// weight; null where no font has it. Cleared with <see cref="_glyphTypefaces"/>.
+        /// </summary>
+        private readonly Dictionary<(int CodePoint, FontStyle Style, FontWeight Weight), FallbackGlyph?> _fallbackGlyphs = new();
+
+        /// <summary>
+        /// A fallback glyph, with where its ink starts and how wide it is in em, so it can be sized
+        /// and centred against the cell.
+        /// </summary>
+        private sealed record FallbackGlyph(GlyphTypeface Typeface, ushort Glyph, double InkLeftEm, double InkWidthEm);
+
+        /// <summary>
         /// The emulator's <c>DrawBoldTextInBrightColors</c>, snapshotted per frame beside the palette.
         /// </summary>
         /// <remarks>
@@ -594,6 +648,14 @@ namespace Iciclecreek.Terminal
                 nameof(ViewportY),
                 o => o.ViewportY,
                 (o, v) => o.ViewportY = v);
+
+        /// <inheritdoc cref="Zoom"/>
+        public static readonly DirectProperty<TerminalView, double> ZoomProperty =
+            AvaloniaProperty.RegisterDirect<TerminalView, double>(
+                nameof(Zoom),
+                o => o.Zoom,
+                (o, v) => o.Zoom = v,
+                unsetValue: 1.0);
 
         public static readonly DirectProperty<TerminalView, int> MaxScrollbackProperty =
             AvaloniaProperty.RegisterDirect<TerminalView, int>(
@@ -1045,6 +1107,31 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
+        /// <see langword="true"/> to spawn the process with Porta.Pty's async I/O, so the view's reads can be
+        /// cancelled. Read at launch; a running process keeps the mode it was started in.
+        /// </summary>
+        /// <remarks>
+        /// <para>What this buys is a lossless <see cref="DetachConnection"/>. A blocking read cannot be
+        /// stopped without closing the stream being handed over, so the detached view's reader stays parked
+        /// in it, and when the process next speaks it takes that chunk. Before the new owner attaches the
+        /// chunk is parked and replayed; after, it is dropped -- see the KNOWN LIMITATION there. A cancellable
+        /// read is unparked by the detach itself, having consumed nothing.</para>
+        /// <para>Off by default, so a launch is exactly what it was. On Linux it needs kernel 5.3 or newer
+        /// (pidfd_open); where the PTY layer cannot provide it, the launch fails and says so.</para>
+        /// </remarks>
+        public static readonly StyledProperty<bool> UseAsyncIoProperty =
+            AvaloniaProperty.Register<TerminalView, bool>(
+                nameof(UseAsyncIo),
+                defaultValue: false);
+
+        /// <inheritdoc cref="UseAsyncIoProperty"/>
+        public bool UseAsyncIo
+        {
+            get => GetValue(UseAsyncIoProperty);
+            set => SetValue(UseAsyncIoProperty, value);
+        }
+
+        /// <summary>
         /// Extra environment variables for the launched process. Null (default) launches it with the host's
         /// environment unchanged.
         /// </summary>
@@ -1273,6 +1360,7 @@ namespace Iciclecreek.Terminal
                 SelectionBrushProperty,
                 BufferSizeProperty,
                 ViewportYProperty,
+                ZoomProperty,
                 CursorColorProperty,
                 CursorStyleProperty,
                 CursorBlinkProperty,
@@ -1293,6 +1381,7 @@ namespace Iciclecreek.Terminal
                 GutterWidthProperty,
                 FontFamilyProperty,
                 FontSizeProperty,
+                ZoomProperty,
                 FontStyleProperty,
                 FontWeightProperty,
                 BufferSizeProperty);
@@ -2465,6 +2554,30 @@ namespace Iciclecreek.Terminal
         // Ctrl+Shift+C / Ctrl+Shift+V instead, because plain Ctrl+C is reserved for SIGINT.
         private static readonly bool IsMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
+        /// <summary>
+        /// The gestures that act on the view itself -- zoom and scrollback -- from
+        /// <see cref="TerminalKeyGestures"/>. True when one was taken. Synchronous, so the caller can
+        /// claim the event before anything awaits.
+        /// </summary>
+        private bool TryHandleViewGesture(KeyEventArgs e)
+        {
+            if (TerminalKeyGestures.ZoomIn.Matches(e)) { ZoomIn(); return true; }
+            if (TerminalKeyGestures.ZoomOut.Matches(e)) { ZoomOut(); return true; }
+            if (TerminalKeyGestures.ResetZoom.Matches(e)) { ResetZoom(); return true; }
+
+            // The alternate buffer has no scrollback, and a full-screen application may well bind these
+            // chords itself, so they are the program's there.
+            if (_terminal.IsAlternateBufferActive)
+                return false;
+
+            if (TerminalKeyGestures.ScrollPageUp.Matches(e)) { ScrollPageUp(); return true; }
+            if (TerminalKeyGestures.ScrollPageDown.Matches(e)) { ScrollPageDown(); return true; }
+            if (TerminalKeyGestures.ScrollToTop.Matches(e)) { ScrollToTop(); return true; }
+            if (TerminalKeyGestures.ScrollToBottom.Matches(e)) { ScrollToBottom(); return true; }
+
+            return false;
+        }
+
         protected override async void OnKeyDown(KeyEventArgs e)
         {
             // A TextInput belongs to the current stroke only. A previous non-text key may have
@@ -2497,11 +2610,17 @@ namespace Iciclecreek.Terminal
 
             if (_processExitHandled != 0)
             {
+                // Reading what a finished run printed is exactly when zoom and scrollback matter, so the
+                // view's own gestures outlive the process. Nothing here needs the PTY.
+                if (shortcuts && TryHandleViewGesture(e))
+                {
+                    e.Handled = true;
+                    return;
+                }
 
-                bool isCopy = shortcuts && e.Key == Key.C &&
-                              (e.KeyModifiers == KeyModifiers.Control ||
-                               e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) ||
-                               (IsMacOS && e.KeyModifiers == KeyModifiers.Meta));
+                bool isCopy = shortcuts &&
+                              ((e.Key == Key.C && e.KeyModifiers == KeyModifiers.Control) ||
+                               TerminalKeyGestures.Copy.Matches(e));
                 if (isCopy && _terminal.Selection.HasSelection)
                 {
                     e.Handled = true;
@@ -2520,6 +2639,26 @@ namespace Iciclecreek.Terminal
 
             try
             {
+                // Zoom and scrollback: the gestures that act on the VIEW rather than on the program's
+                // input. First, and before FollowTail below, which would otherwise undo a scroll-up on
+                // the same keystroke that asked for it. They leave the selection alone -- moving the
+                // view or resizing the text is not a reason to drop what the user picked out.
+                if (shortcuts && TryHandleViewGesture(e))
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                // Ctrl+Shift+A (and Cmd+A on macOS): the always-available select-all, uncontested the way
+                // Ctrl+Shift+C and Ctrl+Shift+V are. Plain Ctrl+A is readline's beginning-of-line and
+                // stays with the program unless the host chose ShortcutMode.Desktop below.
+                if (shortcuts && TerminalKeyGestures.SelectAll.Matches(e))
+                {
+                    e.Handled = true;
+                    await SelectInputAsync().ConfigureAwait(false);
+                    return;
+                }
+
                 // macOS clipboard shortcuts use the Command (Meta) key. These don't collide
                 // with terminal control codes (SIGINT is Ctrl+C, not Cmd+C), so we can handle
                 // them directly here. On Windows/Linux this block is skipped and the
@@ -2659,8 +2798,9 @@ namespace Iciclecreek.Terminal
                     // No selection - fall through to send Ctrl+C (SIGINT) to the process
                 }
 
-                // Handle Ctrl+Shift+C for copy (always copies, doesn't send SIGINT)
-                if (shortcuts && e.Key == Key.C && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+                // Ctrl+Shift+C and Ctrl+Insert copy without ever being SIGINT. Without a selection they
+                // fall through, like every other key.
+                if (shortcuts && TerminalKeyGestures.Copy.Matches(e))
                 {
                     if (_terminal.Selection.HasSelection)
                     {
@@ -2734,10 +2874,10 @@ namespace Iciclecreek.Terminal
                     }
                 }
 
-                // Handle Ctrl+Shift+V for paste (standard terminal shortcut)
-                // Ctrl+V is NOT intercepted - it gets passed to the application
-                // (some apps use Ctrl+V for literal character input mode)
-                if (shortcuts && e.Key == Key.V && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+                // Ctrl+Shift+V and Shift+Insert paste (the standard terminal chords). Ctrl+V is NOT
+                // intercepted here - it reaches the application, which may use it for literal character
+                // input - unless the host chose ShortcutMode.Desktop above.
+                if (shortcuts && TerminalKeyGestures.Paste.Matches(e))
                 {
                     e.Handled = true;
                     await PasteAsync();
@@ -3254,7 +3394,11 @@ namespace Iciclecreek.Terminal
             });
         }
 
-        /// <summary>How long the reader waits for the UI thread to answer a window query.</summary>
+        /// <summary>
+        /// How long the reader waits for the UI thread to answer a window query it has no current
+        /// published answer for -- before the first publish, or while a change it posted is queued.
+        /// At most one such wait per chunk.
+        /// </summary>
         /// <remarks>
         /// Generous for a handler that only reads window state, and short enough that a wedged UI
         /// thread costs a pause rather than the session. See <see cref="OnTerminalWindowInfoRequested"/>.
@@ -3659,6 +3803,7 @@ namespace Iciclecreek.Terminal
                 int cellCount = 0;
                 int runStartX = 0;
                 int[]? blocks = null;
+                bool fallbackRun = false;
                 var runHasBackdrop = CoveredByBackdrop(painted, x, x + Math.Max(1, cell.Width));
 
                 // Cells under a Sixel are drawn like any others, as xterm draws them: the picture goes
@@ -3704,6 +3849,12 @@ namespace Iciclecreek.Terminal
                     // Block characters get runs of their own, drawn as rectangles rather than shaped --
                     // see BlockGlyphs. A run is all one or all the other.
                     var blockRun = IsBlockCell(cell);
+
+                    // And a cell the primary font cannot draw gets a run of ONE -- see NeedsFallback.
+                    // Every cell of a run shares its attributes, so the run's first cell names the
+                    // typeface all of them would be drawn in.
+                    var primaryMap = blockRun ? null : PrimaryGlyphMap(cell.GetFontStyle(), cell.GetFontWeight());
+                    fallbackRun = !blockRun && NeedsFallback(cell, primaryMap);
                     var blockCodePoints = _runBlockCodePoints;
                     blockCodePoints.Clear();
                     while (x < line.Length && x < _terminal.Cols)
@@ -3727,7 +3878,8 @@ namespace Iciclecreek.Terminal
                             // negative-z picture behind them, not every same-style cell beside it.
                             || CoveredByBackdrop(painted, x, x + 1) != runHasBackdrop
                             || (hasSizedRuns && line.TryGetSizedRunAt(x, out _))
-                            || IsBlockCell(currentCell) != blockRun)
+                            || IsBlockCell(currentCell) != blockRun
+                            || (!blockRun && x > runStartX && (fallbackRun || NeedsFallback(currentCell, primaryMap))))
                             break;
 
                         if (blockRun)
@@ -3869,13 +4021,18 @@ namespace Iciclecreek.Terminal
                 {
                     // A run the ligature switch cares about must reach the shaper, which the
                     // fast path never does -- it maps characters to glyphs one for one.
-                    glyphs = td == null && !LigaturesWantShaping(text, style, weight)
-                        ? TryBuildGlyphRun(text, cellCount, style, weight) : null;
+                    if (td == null)
+                    {
+                        if (fallbackRun)
+                            glyphs = TryBuildFallbackGlyphRun(cell.CodePoint, text, style, weight);
+                        else if (!LigaturesWantShaping(text, style, weight))
+                            glyphs = TryBuildGlyphRun(text, cellCount, style, weight);
+                    }
                     if (glyphs is null)
                     {
                         var typeface = new Typeface(FontFamily, style, weight);
                         formattedText = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-                                                          typeface, FontSize, foreground);
+                                                          typeface, EffectiveFontSize, foreground);
                         ApplyLigatureSetting(formattedText);
                         if (td != null)
                             formattedText.SetTextDecorations(td);

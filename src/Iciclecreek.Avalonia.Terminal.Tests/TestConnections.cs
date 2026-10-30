@@ -59,12 +59,17 @@ internal sealed class RecordingConnection : IPtyConnection
 
     private readonly MemoryStream _written = new();
 
-    public RecordingConnection() => WriterStream = new Recorder(_written);
+    /// <param name="reader">What the process "prints" -- a <see cref="PushStream"/> to drive the read loop; silence by default.</param>
+    public RecordingConnection(Stream? reader = null)
+    {
+        WriterStream = new Recorder(_written);
+        ReaderStream = reader ?? new Blocking();
+    }
 
     /// <summary>Everything the terminal has sent to the process so far, decoded as UTF-8.</summary>
     public string Written { get { lock (_written) return Encoding.UTF8.GetString(_written.ToArray()); } }
 
-    public Stream ReaderStream { get; } = new Blocking();
+    public Stream ReaderStream { get; }
     public Stream WriterStream { get; }
     public int ExitCode => 0;
     public bool WaitForExit(int ms) => false;

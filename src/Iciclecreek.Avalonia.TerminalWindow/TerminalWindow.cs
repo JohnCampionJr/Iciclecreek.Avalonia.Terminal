@@ -82,6 +82,12 @@ namespace Iciclecreek.Terminal
                 nameof(VerbatimCommandLine),
                 defaultValue: false);
 
+        /// <inheritdoc cref="TerminalView.UseAsyncIoProperty"/>
+        public static readonly StyledProperty<bool> UseAsyncIoProperty =
+            AvaloniaProperty.Register<TerminalWindow, bool>(
+                nameof(UseAsyncIo),
+                defaultValue: false);
+
         /// <inheritdoc cref="TerminalView.EnvironmentVariablesProperty"/>
         public static readonly StyledProperty<IDictionary<string, string>?> EnvironmentVariablesProperty =
             AvaloniaProperty.Register<TerminalWindow, IDictionary<string, string>?>(
@@ -429,6 +435,13 @@ namespace Iciclecreek.Terminal
             set => SetValue(VerbatimCommandLineProperty, value);
         }
 
+        /// <inheritdoc cref="TerminalView.UseAsyncIoProperty"/>
+        public bool UseAsyncIo
+        {
+            get => GetValue(UseAsyncIoProperty);
+            set => SetValue(UseAsyncIoProperty, value);
+        }
+
         /// <inheritdoc cref="TerminalView.EnvironmentVariablesProperty"/>
         public IDictionary<string, string>? EnvironmentVariables
         {
@@ -529,6 +542,37 @@ namespace Iciclecreek.Terminal
 
         /// <inheritdoc cref="TerminalView.MaxScrollback"/>
         public int MaxScrollback => _terminalControl?.MaxScrollback ?? 0;
+
+        /// <inheritdoc cref="TerminalView.ScrollPageUp"/>
+        public void ScrollPageUp() => _terminalControl?.ScrollPageUp();
+
+        /// <inheritdoc cref="TerminalView.ScrollPageDown"/>
+        public void ScrollPageDown() => _terminalControl?.ScrollPageDown();
+
+        /// <inheritdoc cref="TerminalView.ScrollToTop"/>
+        public void ScrollToTop() => _terminalControl?.ScrollToTop();
+
+        /// <inheritdoc cref="TerminalView.ScrollToBottom"/>
+        public void ScrollToBottom() => _terminalControl?.ScrollToBottom();
+
+        /// <inheritdoc cref="TerminalControl.Zoom"/>
+        public double Zoom
+        {
+            get => _terminalControl?.Zoom ?? 1.0;
+            set { if (_terminalControl != null) _terminalControl.Zoom = value; }
+        }
+
+        /// <inheritdoc cref="TerminalView.ZoomIn"/>
+        public void ZoomIn() => _terminalControl?.ZoomIn();
+
+        /// <inheritdoc cref="TerminalView.ZoomOut"/>
+        public void ZoomOut() => _terminalControl?.ZoomOut();
+
+        /// <inheritdoc cref="TerminalView.ResetZoom"/>
+        public void ResetZoom() => _terminalControl?.ResetZoom();
+
+        /// <inheritdoc cref="TerminalView.SelectInputAsync"/>
+        public Task<bool> SelectInputAsync() => _terminalControl?.SelectInputAsync() ?? Task.FromResult(false);
 
         /// <inheritdoc cref="TerminalControl.ViewportLines"/>
         public int ViewportLines => _terminalControl?.ViewportLines ?? 0;
@@ -746,6 +790,7 @@ namespace Iciclecreek.Terminal
             _terminalControl.Bind(TerminalControl.OutputReceivedOnReadTaskProperty, this.GetObservable(OutputReceivedOnReadTaskProperty));
             _terminalControl.Bind(TerminalControl.AutoScrollToBottomProperty, this.GetObservable(AutoScrollToBottomProperty));
             _terminalControl.Bind(TerminalControl.VerbatimCommandLineProperty, this.GetObservable(VerbatimCommandLineProperty));
+            _terminalControl.Bind(TerminalControl.UseAsyncIoProperty, this.GetObservable(UseAsyncIoProperty));
             _terminalControl.Bind(TerminalControl.EnvironmentVariablesProperty, this.GetObservable(EnvironmentVariablesProperty));
             _terminalControl.Bind(TerminalControl.TextDecorationsProperty, this.GetObservable(TextDecorationsProperty));
             _terminalControl.Bind(TerminalControl.CursorColorProperty, this.GetObservable(CursorColorProperty));

@@ -12,6 +12,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Iciclecreek.Avalonia.Terminal;
 using Porta.Pty;
 using System;
@@ -149,11 +150,28 @@ namespace Iciclecreek.Terminal
                 nameof(WindowInfoRequested),
                 RoutingStrategies.Bubble);
 
-        public static void AddWindowInfoRequestedHandler(Interactive target, EventHandler<WindowInfoRequestedEventArgs> handler) =>
+        public static void AddWindowInfoRequestedHandler(Interactive target, EventHandler<WindowInfoRequestedEventArgs> handler)
+        {
             target.AddHandler(WindowInfoRequestedEvent, handler);
+            RepublishWindowInfoBelow(target);
+        }
 
-        public static void RemoveWindowInfoRequestedHandler(Interactive target, EventHandler<WindowInfoRequestedEventArgs> handler) =>
+        public static void RemoveWindowInfoRequestedHandler(Interactive target, EventHandler<WindowInfoRequestedEventArgs> handler)
+        {
             target.RemoveHandler(WindowInfoRequestedEvent, handler);
+            RepublishWindowInfoBelow(target);
+        }
+
+        // The event bubbles, so a handler on a host (a TerminalControl, a window) changes the answers
+        // of every view beneath it. See PublishWindowInfo.
+        private static void RepublishWindowInfoBelow(Interactive target)
+        {
+            if (target is not Visual visual)
+                return;
+
+            foreach (var view in visual.GetSelfAndVisualDescendants().OfType<TerminalView>())
+                view.PublishWindowInfo();
+        }
 
         /// <summary>
         /// A desktop notification requested by the running program (OSC 9 or Kitty OSC 99). The
@@ -298,12 +316,18 @@ namespace Iciclecreek.Terminal
         /// Event raised when window information is requested by the terminal.
         /// The handler should set the response properties on the event args.
         /// </summary>
-        public event EventHandler<WindowInfoRequestedEventArgs>? WindowInfoRequested;
+        public event EventHandler<WindowInfoRequestedEventArgs>? WindowInfoRequested
+        {
+            add { _windowInfoRequested += value; PublishWindowInfo(); }
+            remove { _windowInfoRequested -= value; PublishWindowInfo(); }
+        }
+
+        private EventHandler<WindowInfoRequestedEventArgs>? _windowInfoRequested;
 
 
         private void OnTerminalTitleChanged(object? sender, XT.Events.TerminalEvents.TitleChangeEventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
 
                 var args = new TitleChangedEventArgs(e.Title)
@@ -346,7 +370,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowMoved(object? sender, XT.Events.TerminalEvents.WindowMovedEventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -461,7 +485,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowMinimized(object? sender, EventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -481,7 +505,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowMaximized(object? sender, EventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -501,7 +525,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowRestored(object? sender, EventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -561,7 +585,7 @@ namespace Iciclecreek.Terminal
 
         private void OnTerminalWindowFullscreened(object? sender, EventArgs e)
         {
-            Dispatcher.UIThread.Post(() =>
+            PostWindowChange(() =>
             {
                 // Refused silently when the host has not granted window operations -- nothing is
                 // raised, so no host acts, and a bare TerminalView with its own handler is covered
@@ -590,24 +614,29 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
-        /// Answers a program asking about the window — its size in cells or pixels, its position, or
-        /// its title — from the UI thread, without letting the reader wait on it for ever.
+        /// Answers a program asking about the window -- its size in pixels, its position, its state or
+        /// its icon title. Off the UI thread the answer is what the UI thread last published; the reader
+        /// waits on the UI thread only when there is nothing current to give, and then at most once per
+        /// chunk.
         /// </summary>
         /// <remarks>
-        /// <para>The answer genuinely needs the UI thread -- only it knows the window -- and the
-        /// emulator reads <c>e.Handled</c> the moment this returns, to decide whether it has a reply
-        /// to send. So it cannot be posted: Post returns immediately, Handled is still false, and the
-        /// answer is written correctly, on the UI thread, after the only reader of it has moved on.
-        /// Every window query then goes unanswered and the program asking waits out its timeout.</para>
-        /// <para>But it cannot block for ever either. This is raised from <c>Terminal.Write</c>, which
-        /// the read loop calls inside <c>lock (_terminalLock)</c> on the pty reader thread, and the UI
-        /// thread takes that same lock in <see cref="ClearScreen"/>, <see cref="CurrentLineText"/> and
-        /// <c>WriteOwnLine</c>. An unbounded wait is a DEADLOCK, not a stall: the application freezes
-        /// with no exception to look for.</para>
-        /// <para>So it is bounded. An idle UI thread answers in microseconds and the normal path is
-        /// unchanged; a wedged one costs a pause instead of the session. Leaving <c>Handled</c> false
-        /// on timeout is not a guess -- it is the answer the emulator already documents for a terminal
-        /// that cannot say, and a wrong number would be worse than none.</para>
+        /// <para>The emulator reads <c>e.Handled</c> the moment this returns, so the answer cannot be
+        /// posted -- Post returns before the handler runs, and a query answered after its only reader
+        /// moved on goes unanswered.</para>
+        /// <para>Nor can the reader wait on the UI thread, which is how this used to work. This is raised
+        /// from <c>Terminal.Write</c>, which the read loop calls inside <c>lock (_terminalLock)</c>, and
+        /// the UI thread takes that lock in <see cref="ClearScreen"/>, <see cref="CurrentLineText"/>,
+        /// <c>WriteOwnLine</c> and ArrangeOverride. A UI thread waiting there cannot run the job being
+        /// waited for. Unbounded, that was a deadlock; bounded per query, a chunk of N queries froze the
+        /// UI for N patiences -- 20 queries, ~4.9 s.</para>
+        /// <para>So the UI thread asks the handlers ahead of time and publishes their answers
+        /// (<see cref="PublishWindowInfo"/>), and the reader gives those. Two cases still wait, bounded
+        /// by <see cref="WindowInfoPatience"/> and capped at one timeout per chunk: a view never yet in a
+        /// tree, and a change this reader posted -- a new title, a move, an iconify -- that the UI thread
+        /// has not applied yet (<see cref="PostWindowChange"/>). Then the queued job runs after that
+        /// change, as before, and an idle UI thread answers with the new value. Leaving
+        /// <c>Handled</c> false on timeout is the emulator's documented "cannot say", and a wrong
+        /// number would be worse than none.</para>
         /// </remarks>
         private void OnTerminalWindowInfoRequested(object? sender, XT.Events.TerminalEvents.WindowInfoRequestedEventArgs e)
         {
@@ -620,7 +649,7 @@ namespace Iciclecreek.Terminal
             // thread, and the SAME numbers the emulator tiles images by, which is the consistency
             // the placeholder path depends on. A host cannot meaningfully override the view's real
             // pixel metrics, so these no longer consult handlers; position, titles and state are
-            // genuinely the host's to answer and keep the dispatched path below.
+            // genuinely the host's to answer, and are answered from what the host last said.
             switch (e.Request)
             {
                 case XT.Common.WindowInfoRequest.CellSizePixels:
@@ -639,6 +668,29 @@ namespace Iciclecreek.Terminal
 
             if (!Dispatcher.UIThread.CheckAccess())
             {
+                // The answers the UI thread last published, read without waiting. Waiting is what
+                // froze the UI: this runs inside lock (_terminalLock), and a UI thread blocked on
+                // that lock -- ClearScreen, ArrangeOverride on every grid resize -- cannot run the
+                // job this would wait for, so each query in the chunk sat out its full patience.
+                // `yes $'\e[13t'` was minutes of frozen UI.
+                //
+                // Not while a change this reader posted is still on its way: `\e]0;new\a\e[20t` in
+                // one chunk asks before the new title reaches the window, and the published answer is
+                // the old one. The queued path below runs after the change, so it gets it right.
+                if (WindowInfoIsCurrent && PublishedWindowInfo(e.Request) is { } published)
+                {
+                    CopyWindowInfo(published, e);
+                    RefreshWindowInfoSoon();
+                    return;
+                }
+
+                // Nothing current: never published, or a change is still queued. Ask the UI thread, but
+                // once one query in this chunk has timed out, answer the rest "cannot say" at once.
+                // The UI thread is evidently not coming, and the patience is per query while the
+                // chunk can hold thousands of them.
+                if (_windowInfoTimedOut)
+                    return;
+
                 // Whoever gets here first wins, and the loser does nothing.
                 //
                 // Timing out does not cancel the queued job -- the UI thread runs it whenever it
@@ -656,7 +708,10 @@ namespace Iciclecreek.Terminal
                 });
 
                 if (!pending.GetTask().Wait(WindowInfoPatience) && Interlocked.Exchange(ref claim, 1) == 0)
+                {
+                    _windowInfoTimedOut = true;
                     Debug.WriteLine("[TerminalView] window-info query timed out; answering unhandled");
+                }
 
                 return;
             }
