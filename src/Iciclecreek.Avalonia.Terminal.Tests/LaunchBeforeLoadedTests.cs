@@ -222,6 +222,26 @@ public class LaunchBeforeLoadedTests
         finally { window.Close(); }
     }
 
+    /// <summary>
+    /// The queued launch meeting Loaded, with the spawn held open so a second launch could not hide behind
+    /// an already-installed connection.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task A_queued_launch_and_Loaded_spawn_once_between_them()
+    {
+        var (view, spawner) = NewView(process: "", holdOpen: true);
+        var window = Show(view);
+        try
+        {
+            view.Process = "sh";
+            await WaitUntil(() => view.IsLoaded, "Loaded fired");
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.That(spawner.Calls, Has.Count.EqualTo(1), "one spawn, whichever of the two got there first");
+        }
+        finally { window.Close(); }
+    }
+
     // ---- the size it ends up with -----------------------------------------------------------------
 
     [AvaloniaTest]
@@ -307,6 +327,126 @@ public class LaunchBeforeLoadedTests
 
             Assert.That(spawner.Calls, Has.Count.EqualTo(1));
             Assert.That(spawner.Spawned.Single().Killed, Is.False);
+        }
+        finally { window.Close(); }
+    }
+
+    /// <summary>
+    /// Moved off the tree and back while the early spawn is in flight. The detach cleans up, so the spawn
+    /// comes back superseded and kills itself; the re-attach's Loaded must not defer to it.
+    /// </summary>
+    [AvaloniaTest]
+    public async Task Detach_and_reattach_during_the_early_spawn_still_ends_with_a_process()
+    {
+        var (view, spawner) = NewView(holdOpen: true);
+        var window = Show(view);
+        try
+        {
+            Assert.That(spawner.Calls, Has.Count.EqualTo(1), "sanity: the early spawn started");
+
+            window.Content = null;
+            window.Content = view;
+            window.UpdateLayout();
+            await WaitUntil(() => view.IsLoaded, "the re-attached view loaded");
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.That(spawner.Calls, Has.Count.EqualTo(2), "Loaded launched in place of the superseded spawn");
+
+            var early = new SpyConnection();
+            var replacement = new SpyConnection();
+            spawner.Pending[1].SetResult(replacement);
+            spawner.Pending[0].SetResult(early);
+            await WaitUntil(() => view.IsLive, "the replacement was installed");
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(early.Killed, Is.True, "the superseded early spawn is not left running");
+                Assert.That(replacement.Killed, Is.False);
+                Assert.That(view.DetachConnection(), Is.SameAs(replacement), "the view ends with a process");
+            });
+        }
+        finally { window.Close(); }
+    }
+
+    /// <summary>The same move under BeginReparent, which keeps the process: still exactly one.</summary>
+    [AvaloniaTest]
+    public async Task Reparenting_during_the_early_spawn_keeps_the_one_process()
+    {
+        var (view, spawner) = NewView(holdOpen: true);
+        var window = Show(view);
+        try
+        {
+            view.BeginReparent();
+            window.Content = null;
+            window.Content = view;
+            view.EndReparent();
+            window.UpdateLayout();
+            await WaitUntil(() => view.IsLoaded, "the re-parented view loaded");
+            Dispatcher.UIThread.RunJobs();
+
+            var early = new SpyConnection();
+            spawner.Pending[0].SetResult(early);
+            await WaitUntil(() => view.IsLive, "the early spawn was installed");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(spawner.Calls, Has.Count.EqualTo(1));
+                Assert.That(early.Killed, Is.False);
+            });
+        }
+        finally { window.Close(); }
+    }
+
+    // ---- what shapes the launch -------------------------------------------------------------------
+
+    /// <summary>
+    /// Avalonia raises Initialized straight after OnInitialized, and a host's Initialized handler is an
+    /// ordinary place to finish configuring a view. Its values must reach the early launch.
+    /// </summary>
+    [AvaloniaTest]
+    public void Settings_from_an_Initialized_handler_shape_the_early_launch()
+    {
+        var directory = Path.GetTempPath();
+        var (view, spawner) = NewView();
+        view.Initialized += (_, _) =>
+        {
+            view.StartingDirectory = directory;
+            view.ProcessArgs = new List<string> { "-c", "echo hi" };
+            view.EnvironmentVariables = new Dictionary<string, string> { ["EARLY_PROBE"] = "1" };
+        };
+
+        var window = Show(view);
+        try
+        {
+            Dispatcher.UIThread.RunJobs();
+            Assert.That(spawner.Calls, Has.Count.EqualTo(1));
+            var at = spawner.Calls[0];
+            Assert.Multiple(() =>
+            {
+                Assert.That(at.Options.Cwd, Is.EqualTo(directory), "StartingDirectory");
+                Assert.That(at.Options.CommandLine, Is.EqualTo(new[] { "-c", "echo hi" }), "ProcessArgs");
+                Assert.That(at.Options.Environment, Does.ContainKey("EARLY_PROBE"), "EnvironmentVariables");
+                Assert.That(at.Arranged, Is.False, "and still before the view's first arrange");
+            });
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTest]
+    public void Process_set_in_an_Initialized_handler_launches_once_before_layout()
+    {
+        var (view, spawner) = NewView(process: "");
+        view.Initialized += (_, _) => view.Process = "sh";
+
+        var window = Show(view);
+        try
+        {
+            Assert.That(spawner.Calls, Has.Count.EqualTo(1), "launched without waiting for a dispatcher turn");
+            Assert.That(spawner.Calls[0].Arranged, Is.False);
+
+            Dispatcher.UIThread.RunJobs();
+            Assert.That(spawner.Calls, Has.Count.EqualTo(1), "and only once");
         }
         finally { window.Close(); }
     }
