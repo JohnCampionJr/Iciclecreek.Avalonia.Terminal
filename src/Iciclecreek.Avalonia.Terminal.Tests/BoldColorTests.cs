@@ -121,6 +121,24 @@ public class BoldColorTests
         finally { window.Close(); }
     }
 
+    /// <summary>
+    /// #000100 packs to the value 256, the default foreground's number, but in RGB mode. Bold must
+    /// not mistake it for a default cell and hand it the bold colour.
+    /// </summary>
+    [AvaloniaTest]
+    public void Bold_24_bit_000100_is_not_taken_for_the_default()
+    {
+        var (view, window) = Realised(Orange);
+        try
+        {
+            var cell = Cell(view, $"{Esc}[1;38;2;0;1;0mX");
+
+            Assert.That(cell.GetForegroundColor(view.Terminal.Colors.Take()),
+                Is.EqualTo(Color.FromRgb(0, 1, 0)));
+        }
+        finally { window.Close(); }
+    }
+
     [AvaloniaTest]
     public void Text_that_is_not_bold_is_unaffected()
     {

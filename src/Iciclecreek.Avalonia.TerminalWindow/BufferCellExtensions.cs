@@ -105,8 +105,8 @@ namespace Iciclecreek.Avalonia.Terminal
         }
 
         /// <summary>
-        /// A cell's foreground colour, or <see langword="null"/> when it uses the terminal's DEFAULT
-        /// foreground.
+        /// A cell's foreground colour, or <see langword="null"/> when it is drawn in the terminal's
+        /// DEFAULT foreground (a default cell, unless it is bold and the theme sets a bold colour).
         /// </summary>
         /// <param name="boldIsBright">
         /// The emulator's <c>DrawBoldTextInBrightColors</c>. Passed in because this is a RENDERER
@@ -150,15 +150,21 @@ namespace Iciclecreek.Avalonia.Terminal
         /// <remarks>
         /// One of the two places this control reads XTerm.NET's colour encoding directly (the other is
         /// <see cref="IsDefaultBackground"/>, with <see cref="ExtractColor"/> behind it): today the
-        /// default is the out-of-palette value 256 for a foreground and 257 for a background. When
-        /// that encoding changes, these are what change with it.
+        /// default is the out-of-palette value 256 for a foreground and 257 for a background, under
+        /// palette mode 0. When that encoding changes, these are what change with it.
+        /// <para>The mode is half the test, not a formality. The value and mode share one packed int,
+        /// so 24-bit #000100 (<c>38;2;0;1;0</c>) is also the value 256, in mode 1; checking the value
+        /// alone drew that colour in the theme's foreground, and the #000101 background as no
+        /// background at all.</para>
         /// </remarks>
-        private static bool IsDefaultForeground(in AttributeData attributes) => attributes.GetFgColor() == 256;
+        private static bool IsDefaultForeground(in AttributeData attributes)
+            => attributes.GetFgColorMode() == 0 && attributes.GetFgColor() == 256;
 
         /// <summary>Whether a cell's background is the terminal's default. See <see cref="IsDefaultForeground"/>.</summary>
         // TODO: replace this and GetBackgroundColor's ExtractColor call with ColorSnapshot.ResolveBackground
         // (null for the default background) once XTerm.NET ships it, so no mode value is read here at all.
-        private static bool IsDefaultBackground(in AttributeData attributes) => attributes.GetBgColor() == 257;
+        private static bool IsDefaultBackground(in AttributeData attributes)
+            => attributes.GetBgColorMode() == 0 && attributes.GetBgColor() == 257;
 
         /// <summary>
         /// The brush to draw a cell's text in. A cell using the DEFAULT foreground resolves to the
