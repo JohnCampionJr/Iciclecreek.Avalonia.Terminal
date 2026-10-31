@@ -274,7 +274,7 @@ public class ReaderOwnershipTests
                 "a chunk whose write had not started when the detach landed belongs to the new owner");
             Assert.That(Screen(view2), Does.Contain("RACED"), "and reaches it");
         }
-        finally { w1.Close(); w2.Close(); }
+        finally { w1.Close(); w2.Close(); pty.Dispose(); }
     }
 
     private static (TerminalView view, TurnConnection pty, Window window) LiveTurnView()

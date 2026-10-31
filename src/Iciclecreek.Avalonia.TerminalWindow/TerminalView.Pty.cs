@@ -416,7 +416,7 @@ namespace Iciclecreek.Terminal
         /// almost-the-same delivery path would drift. <paramref name="shellReadyPosted"/> is the
         /// loop's once-per-process latch; a replay passes true, because parked bytes are mid-session
         /// output and must not re-announce readiness. <paramref name="cancellationToken"/> is the
-        /// loop's token, which two of the posted callbacks compare against the CURRENT process's to
+        /// loop's token, which the posted ShellReady callback compares against the CURRENT process's to
         /// refuse stale delivery — a replay passes the current one.
         /// <para>Returns false, having delivered nothing anywhere, when <paramref name="sessionId"/> is no
         /// longer this view's session; the caller parks the chunk for the next owner. That is asked inside
@@ -455,6 +455,14 @@ namespace Iciclecreek.Terminal
             // skipped for them regardless, so they count as following.
             _followBottom = _isAlternateBuffer || (_autoScroll && _terminal.Buffer.IsAtBottom);
 
+            // Read once: the two halves below must agree on which path reports this chunk, or a
+            // flip in between would report it twice or not at all. Guarded so an unsubscribed
+            // terminal pays nothing: without it every chunk allocates a closure and queues a
+            // dispatcher callback for no subscriber. The ?.Invoke inside each path still covers the
+            // race where the last handler unsubscribes before delivery.
+            var sniffed = OutputReceived != null;
+            var sniffOnReadTask = _outputOnReadTask;
+
             long lockRequested = System.Diagnostics.Stopwatch.GetTimestamp();
             lock (_terminalLock)
             {
@@ -464,6 +472,24 @@ namespace Iciclecreek.Terminal
                 // that had just handed the connection away, and the next owner never saw it.
                 if (Interlocked.Read(ref _sessionId) != sessionId)
                     return false;
+
+                // Posted once the chunk is certain to be written here, and BEFORE it is: parsing
+                // posts its own UI-thread events -- a title, a bell -- and the dispatcher runs posts
+                // in order, so this one is heard first, as it always was. Posted after the write it
+                // queued behind them, and a title handler that moved the session to another view
+                // made the guard this callback used to carry discard a chunk this view had painted.
+                //
+                // No such guard now. Only accepted chunks get here, so there is nothing stale to
+                // filter: the callback reports a chunk this view DID paint, whatever happens to the
+                // session before it runs, and SessionId says which process it came from.
+                if (sniffed && !sniffOnReadTask)
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        try { OutputReceived?.Invoke(this, new OutputReceivedEventArgs(chunk) { SessionId = sessionId }); }
+                        catch { /* a sniffer must never take the app down */ }
+                    });
+                }
 
                 long lockTaken = System.Diagnostics.Stopwatch.GetTimestamp();
 
@@ -521,40 +547,20 @@ namespace Iciclecreek.Terminal
                     _frameCapture.PublishThrottled(_terminal, Interlocked.Read(ref _liveWriteGeneration));
             }
 
-            // AFTER the write, so the sniffer hears exactly the chunks this view painted. Raised
-            // before it, a chunk the check above then refused had already been reported here, and
-            // would be reported again by the view it went to.
+            // On the read task the handler runs here, straight through, AFTER the write and outside
+            // the lock -- unconditionally, since the session check above already accepted the chunk.
+            // Not before the write: that would put host code inside _terminalLock, and a handler that
+            // marshals to the UI thread while the UI thread waits for the lock is the deadlock
+            // ReaderThreadDeadlockTests exist for. Not before the lock either: a chunk the check then
+            // refused would have been reported here AND by the view it went to.
             //
-            // Guarded so an unsubscribed terminal pays nothing: without it every chunk allocates a
-            // closure and queues a dispatcher callback for no subscriber. The ?.Invoke inside still
-            // covers the race where the last handler unsubscribes between here and delivery.
-            if (OutputReceived != null)
+            // The catch matters MORE on this path than on the dispatcher one, and for a different
+            // reason: an escaping exception here propagates into the read loop and ends it, leaving a
+            // live process with a frozen view and nothing reported.
+            if (sniffed && sniffOnReadTask)
             {
-                if (_outputOnReadTask)
-                {
-                    // Straight through, on this thread. The staleness guard is the session check
-                    // above, which nothing reaches this line without passing.
-                    //
-                    // The catch matters MORE on this path than on the dispatcher one, and for a
-                    // different reason: an escaping exception here propagates into the read loop and
-                    // ends it, leaving a live process with a frozen view and nothing reported.
-                    try { OutputReceived?.Invoke(this, new OutputReceivedEventArgs(chunk) { SessionId = sessionId }); }
-                    catch { /* a sniffer must never kill the read loop */ }
-                }
-                else
-                {
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        // Same guard ShellReady uses: the callback can still be queued when a relaunch
-                        // swaps the process out underneath it, and without this a consumer sees the old
-                        // process's bytes attributed to the new one.
-                        if (_processCts?.Token != cancellationToken)
-                            return;
-
-                        try { OutputReceived?.Invoke(this, new OutputReceivedEventArgs(chunk) { SessionId = sessionId }); }
-                        catch { /* a sniffer must never take the app down */ }
-                    });
-                }
+                try { OutputReceived?.Invoke(this, new OutputReceivedEventArgs(chunk) { SessionId = sessionId }); }
+                catch { /* a sniffer must never kill the read loop */ }
             }
 
             // Signal on the first chunk only. Posting per chunk would keep queueing UI-thread

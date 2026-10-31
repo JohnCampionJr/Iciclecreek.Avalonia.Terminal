@@ -197,8 +197,24 @@ internal sealed class TurnConnection : IPtyConnection
     private sealed class TurnStream : Stream
     {
         private readonly LinkedList<Turn> _waiting = new();
+        private bool _closed;
 
         public int WaitingReads { get { lock (_waiting) return _waiting.Count; } }
+
+        /// <summary>Ends every parked read with EOF, and every later read at once.</summary>
+        public void End()
+        {
+            lock (_waiting)
+            {
+                _closed = true;
+                foreach (var turn in _waiting)
+                {
+                    turn.Chunk = Array.Empty<byte>();
+                    turn.Served.Set();
+                }
+                _waiting.Clear();
+            }
+        }
 
         public Turn Serve(byte[] chunk, TimeSpan patience)
         {
@@ -226,7 +242,12 @@ internal sealed class TurnConnection : IPtyConnection
         {
             ValidateBufferArguments(buffer, offset, count);
             var turn = new Turn();
-            lock (_waiting) _waiting.AddLast(turn);
+            lock (_waiting)
+            {
+                if (_closed)
+                    return 0;
+                _waiting.AddLast(turn);
+            }
             turn.Served.Wait();
 
             var n = Math.Min(count, turn.Chunk!.Length);
@@ -263,7 +284,14 @@ internal sealed class TurnConnection : IPtyConnection
     public int Pid => -1;
     public void Kill() { }
     public void Resize(int columns, int rows) { }
-    public void Dispose() { }
+
+    /// <summary>
+    /// Ends every parked read with EOF, as closing a real pty does. A test calls it in its finally,
+    /// after closing its views: a blocking reader parked here otherwise holds a thread and its read
+    /// buffer until the test host exits.
+    /// </summary>
+    public void Dispose() => _stream.End();
+
     public event EventHandler<PtyExitedEventArgs>? ProcessExited { add { } remove { } }
 }
 

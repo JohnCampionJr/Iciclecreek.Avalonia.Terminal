@@ -167,9 +167,9 @@ public class HandoverTests
     {
         var (view1, w1) = Realised();
         var (view2, w2) = Realised();
+        var pty = new TurnConnection();
         try
         {
-            var pty = new TurnConnection();
             view1.AttachConnection(pty);
             pty.Emit("<before>");
             Await(() => Text(view1).Contains("<before>") && pty.WaitingReads == 1);
@@ -192,7 +192,7 @@ public class HandoverTests
                 "and ahead of what the process said after it");
             Assert.That(Text(view1), Does.Not.Contain("<stolen>"), "the detached view must not have painted it");
         }
-        finally { w1.Close(); w2.Close(); }
+        finally { w1.Close(); w2.Close(); pty.Dispose(); }
     }
 
     /// <summary>
@@ -209,19 +209,106 @@ public class HandoverTests
     public void A_detached_view_is_not_kept_alive_by_its_parked_reader()
     {
         var pty = new TurnConnection();
-        var view = AttachThenDetach(pty);
-
-        for (var i = 0; i < 5 && view.IsAlive; i++)
+        try
         {
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            Dispatcher.UIThread.RunJobs();
+            var view = AttachThenDetach(pty);
+
+            for (var i = 0; i < 5 && view.IsAlive; i++)
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                Dispatcher.UIThread.RunJobs();
+            }
+
+            Assert.That(pty.WaitingReads, Is.EqualTo(1), "sanity: the stale reader is still parked, which is the case under test");
+            Assert.That(view.IsAlive, Is.False, "the parked reader is keeping the detached view alive");
         }
+        finally { pty.Dispose(); }   // EOF lets the stale reader finish rather than leak a parked thread
+    }
 
-        Assert.That(pty.WaitingReads, Is.EqualTo(1), "sanity: the stale reader is still parked, which is the case under test");
-        Assert.That(view.IsAlive, Is.False, "the parked reader is keeping the detached view alive");
+    /// <summary>
+    /// A title handler that moves the session to another view mid-chunk does not cost that chunk its
+    /// OutputReceived: the view that painted it reports it, once, and ahead of the title.
+    /// </summary>
+    /// <remarks>
+    /// <para>A host moving a tab when the program renames it is ordinary. Parsing the chunk posts the
+    /// title, and OutputReceived used to be posted after the write -- so the title handler ran first,
+    /// handed the session away, and the OutputReceived callback then found its session gone and
+    /// discarded a chunk this view had painted. Neither view reported it.</para>
+    /// <para>On the default dispatcher path, which is the one where the two events share a queue.</para>
+    /// </remarks>
+    [AvaloniaTest]
+    public void A_title_handler_that_hands_the_session_over_does_not_cost_the_chunk_its_report()
+    {
+        var (view1, w1) = Realised();
+        var (view2, w2) = Realised();
+        var pty = new TurnConnection();
+        try
+        {
+            var heard = new List<string>();
+            view1.OutputReceived += (_, e) => { if (e.Output.Contains("<payload>")) lock (heard) heard.Add("view1:output"); };
+            view2.OutputReceived += (_, e) => { if (e.Output.Contains("<payload>")) lock (heard) heard.Add("view2:output"); };
+            view1.TitleChanged += (_, e) =>
+            {
+                if (e.Title != "moved") return;
+                lock (heard) heard.Add("view1:title");
+                view2.AttachConnection(view1.DetachConnection()!);
+            };
 
-        pty.Emit("unpark");   // let the stale reader finish rather than leak a parked thread into the fixture
+            view1.AttachConnection(pty);
+            pty.Emit("\u001b]2;moved\u0007<payload>");
+
+            // The handover runs inside the title handler, so once the title is heard it is done; one
+            // more drain gives a late or duplicate report the chance to show up.
+            Await(() => { lock (heard) return heard.Contains("view1:title") && heard.Contains("view1:output"); });
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.That(Text(view1), Does.Contain("<payload>"), "sanity: the view that owned the chunk painted it");
+            Assert.That(Text(view2), Does.Not.Contain("<payload>"), "sanity: and the view it moved to did not");
+            lock (heard)
+                Assert.That(heard, Is.EqualTo(new[] { "view1:output", "view1:title" }),
+                    "reported once, by the view that painted it, ahead of the title its parsing raised");
+        }
+        finally { w1.Close(); w2.Close(); pty.Dispose(); }
+    }
+
+    /// <summary>
+    /// A chunk the view painted is reported even when the view gives the session up before the
+    /// dispatcher gets round to the report.
+    /// </summary>
+    /// <remarks>
+    /// The report used to carry a guard that dropped it once the session had changed. Its job was to
+    /// stop a dead process's bytes being reported as a live one's -- but only accepted, painted chunks
+    /// are reported now, each stamped with its SessionId, so all the guard could still do was lose
+    /// output a listener should have heard.
+    /// </remarks>
+    [AvaloniaTest]
+    public void A_painted_chunk_is_reported_even_if_the_session_moves_before_the_report_runs()
+    {
+        var (view, window) = Realised();
+        var pty = new TurnConnection();
+        try
+        {
+            var heard = 0;
+            view.OutputReceived += (_, e) => { if (e.Output.Contains("<painted>")) Interlocked.Increment(ref heard); };
+
+            view.AttachConnection(pty);
+            pty.Emit("<painted>");
+
+            // Not pumped: the report stays queued while the chunk is painted and the session moves.
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            while (clock.Elapsed < TimeSpan.FromSeconds(5) && !Text(view).Contains("<painted>"))
+                Thread.Sleep(5);
+            Assert.That(Text(view), Does.Contain("<painted>"), "sanity: the chunk was painted");
+            Assert.That(Volatile.Read(ref heard), Is.Zero, "sanity: and its report has not run yet");
+
+            view.DetachConnection();
+            Await(() => Volatile.Read(ref heard) > 0);
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.That(Volatile.Read(ref heard), Is.EqualTo(1), "a painted chunk is reported exactly once");
+        }
+        finally { window.Close(); pty.Dispose(); }
     }
 
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
