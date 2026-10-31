@@ -1779,7 +1779,8 @@ namespace Iciclecreek.Terminal
             //
             // The question has to be asked without consuming the answer: TakeKeyboardSelectionDeletion
             // CLEARS the selection as it takes it, so calling it first leaves CopyAsync nothing to copy.
-            if (!CanRemoveSelection)
+            // A locked keyboard (KAM) cannot send the deletion, so the cut would only be a copy.
+            if (!CanRemoveSelection || IsKeyboardLocked)
                 return false;
 
             if (!await CopyAsync().ConfigureAwait(false))
@@ -2814,6 +2815,19 @@ namespace Iciclecreek.Terminal
                     }
                 }
 
+                // Keyboard Action Mode: the application has locked the keyboard, so from here on nothing
+                // is encoded. Everything above acts on the view or the clipboard, not the process, and
+                // stays available. Paste and cut above decline for themselves. The keystroke is consumed
+                // rather than left to bubble -- a locked Tab must not move focus out of the terminal --
+                // except the legacy Meta chords and bare modifiers, which never were.
+                if (IsKeyboardLocked)
+                {
+                    if (!IsModifierKey(e.Key)
+                        && ((e.KeyModifiers & KeyModifiers.Meta) == 0 || _terminal.KittyKeyboardActive))
+                        e.Handled = true;
+                    return;
+                }
+
                 // Typing means "put me back at the prompt" — every terminal jumps to the tail on input,
                 // and without it a user who scrolled up types blind. Past the bare modifiers for the same
                 // reason the selection-clear below skips them: pressing Ctrl on its own is not typing.
@@ -3268,6 +3282,16 @@ namespace Iciclecreek.Terminal
             {
                 Debug.WriteLine($"[TerminalView] OnTextInput: No PTY or empty text");
                 base.OnTextInput(e);
+                return;
+            }
+
+            // Keyboard Action Mode. Typed text, dead-key results and IME commits all arrive here, and
+            // all of them are sent by this view rather than by the emulator's gated generators. The
+            // selection is left alone: nothing replaced it.
+            if (IsKeyboardLocked)
+            {
+                _win32RecordSentForThisStroke = false;
+                e.Handled = true;
                 return;
             }
 
