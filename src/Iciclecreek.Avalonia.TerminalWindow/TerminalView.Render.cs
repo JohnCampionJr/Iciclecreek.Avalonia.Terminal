@@ -318,6 +318,7 @@ namespace Iciclecreek.Terminal
             // ordinary settable option, so a program or a host can move it between frames, and half a
             // screen drawn under each rule would be worse than either.
             _boldIsBright = _terminal.Options.DrawBoldTextInBrightColors;
+            _faintOpacity = FaintOpacity;
 
             // Same discipline for the contrast floor: one ratio for the whole frame. The snapshot
             // also owns the (fg, bg) -> adjusted cache, cleared when the ratio moves.
@@ -1929,7 +1930,7 @@ namespace Iciclecreek.Terminal
                         Math.Max(0, boxRight - boxX), draw.RowHeight * run.Rows);
 
                     var background = cell.GetBackgroundBrush(_palette, this.Background);
-                    var foreground = cell.GetForegroundBrush(_palette, this.Foreground, _boldIsBright);
+                    var foreground = cell.GetForegroundBrush(_palette, this.Foreground, _boldIsBright, _faintOpacity);
                     // The same swap ladder the normal run path applies: inverse, DECSCNM, blink.
                     bool swapped = false;
                     if (cell.Attributes.IsInverse())
@@ -2132,7 +2133,7 @@ namespace Iciclecreek.Terminal
                         var endX = Snap((runStartX + cellCount) * _charWidth, scale);
                         var rect = new Rect(startX, startYPos, Math.Max(0, endX - startX), rowHeight);
                         var background = cell.GetBackgroundBrush(_palette, this.Background);
-                        var foreground = cell.GetForegroundBrush(_palette, this.Foreground, _boldIsBright);
+                        var foreground = cell.GetForegroundBrush(_palette, this.Foreground, _boldIsBright, _faintOpacity);
                         // Apply cell-level inverse attribute
                         bool swapped = false;
                         if (cell.Attributes.IsInverse())

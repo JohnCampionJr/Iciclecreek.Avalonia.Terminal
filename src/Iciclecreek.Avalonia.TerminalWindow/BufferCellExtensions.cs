@@ -155,12 +155,22 @@ namespace Iciclecreek.Avalonia.Terminal
         /// </param>
         public static IBrush GetForegroundBrush(this BufferCell cell, ColorSnapshot palette, IBrush defaultBrush,
                                                bool boldIsBright = true)
+            => cell.GetForegroundBrush(palette, defaultBrush, boldIsBright, DefaultFaintOpacity);
+
+        /// <inheritdoc cref="GetForegroundBrush(BufferCell, ColorSnapshot, IBrush, bool)"/>
+        /// <param name="faintOpacity">
+        /// How much of a dim (SGR 2) cell's foreground survives — the view's <c>FaintOpacity</c>, clamped
+        /// to [0, 1] here as well so a direct caller cannot produce an out-of-range brush. Required, so
+        /// this overload never competes with the one above.
+        /// </param>
+        public static IBrush GetForegroundBrush(this BufferCell cell, ColorSnapshot palette, IBrush defaultBrush,
+                                               bool boldIsBright, double faintOpacity)
         {
             // The one place dim is applied. It used to be applied here AND as a 0.6 multiply on each
             // channel while the colour was resolved, so dim coloured text was dimmed twice over --
             // while dim text using the DEFAULT foreground fell straight past both, because the
             // resolver returns before it reaches the multiply, and was not dimmed at all.
-            var dim = cell.Attributes.IsDim() ? DimOpacity : 1.0;
+            var dim = cell.Attributes.IsDim() ? CoerceFaintOpacity(faintOpacity) : 1.0;
 
             var fgColor = cell.GetForegroundColor(palette, boldIsBright);
             if (fgColor.HasValue)
@@ -182,14 +192,22 @@ namespace Iciclecreek.Avalonia.Terminal
         }
 
         /// <summary>
-        /// How much of a dim cell's foreground survives.
+        /// How much of a dim cell's foreground survives, unless the host says otherwise through
+        /// <c>TerminalView.FaintOpacity</c>.
         /// </summary>
         /// <remarks>
-        /// Kept at the value this host has always used rather than moved to xterm.js's 0.5. The bug
-        /// was that dim was applied twice to one kind of text and not at all to another; the strength
-        /// of a single application is a separate question and not one this change answers.
+        /// Kept at the value this host has always used rather than moved to xterm.js's (or Ghostty's)
+        /// 0.5. The bug was that dim was applied twice to one kind of text and not at all to another;
+        /// the strength of a single application is the host's call, which is what the property is for.
         /// </remarks>
-        private const double DimOpacity = 0.4;
+        public const double DefaultFaintOpacity = 0.4;
+
+        /// <summary>
+        /// Clamps a faint opacity to [0, 1]. NaN is not a strength anyone asked for, so it falls back to
+        /// <see cref="DefaultFaintOpacity"/> rather than reaching a brush.
+        /// </summary>
+        internal static double CoerceFaintOpacity(double value)
+            => double.IsNaN(value) ? DefaultFaintOpacity : Math.Clamp(value, 0.0, 1.0);
 
         /// <summary>
         /// SGR 8 applied to a foreground that has already been through any inverse swap.
