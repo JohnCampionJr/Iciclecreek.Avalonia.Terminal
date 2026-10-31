@@ -1683,20 +1683,16 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
-        /// Maximum scroll position (total buffer lines - viewport lines).
+        /// Maximum scroll position: the number of lines above the screen (the buffer's <c>YBase</c>).
         /// This is the maximum value ViewportY can be.
         /// </summary>
-        public int MaxScrollback
-        {
-            get
-            {
-                // Simple: total lines in buffer minus how many we can see
-                var totalLines = _terminal.Buffer.Length;
-                var viewportLines = _terminal.Rows;
-                var max = Math.Max(0, totalLines - viewportLines);
-                return max;
-            }
-        }
+        /// <remarks>
+        /// Not <c>Buffer.Length - Rows</c>. The emulator clamps ViewportY to YBase, and a resize that shrinks
+        /// the row count can leave blank lines in the buffer BELOW the screen, which that subtraction counted
+        /// as scrollback. The scrollbar then offered a range it could never scroll through: a near-full thumb
+        /// pinned at the top of a terminal with nothing above the screen.
+        /// </remarks>
+        public int MaxScrollback => Math.Max(0, _terminal.Buffer.YBase);
 
         public int ViewportLines => _terminal.Rows;
 
