@@ -162,4 +162,54 @@ public class ScrollBarSyncTests
             window.Close();
         }
     }
+
+    /// <summary>
+    /// Shrinking the rows with the cursor near the top scrolls nothing off the screen, so there is still no
+    /// scrollback and the bar must stay inert.
+    /// </summary>
+    /// <remarks>
+    /// XTerm.NET's resize keeps the buffer's lines and leaves the ones that no longer fit as blank lines
+    /// BELOW the screen. MaxScrollback used to be <c>Buffer.Length - Rows</c>, which counted those as
+    /// scrollback, so the bar showed a range of 12 the viewport could never move through (the emulator clamps
+    /// ViewportY to YBase): a solid thumb that ignored every drag.
+    /// </remarks>
+    [AvaloniaTest]
+    public void Shrinking_the_rows_with_nothing_scrolled_off_leaves_no_scrollback()
+    {
+        var control = new TerminalControl { Process = "" };
+        var window = TerminalHost.Show(control);
+
+        try
+        {
+            var view = control.View();
+            var cell = view.CharHeight;
+            Assume.That(cell, Is.GreaterThan(0), "needs measured cell metrics to size the grid");
+
+            control.Height = 24.5 * cell;
+            window.UpdateLayout();
+            Assume.That(view.Terminal.Rows, Is.EqualTo(24), "the grid should start at 24 rows");
+
+            control.Terminal.Write("prompt\r\n");
+            Assume.That(view.Terminal.Buffer.Y, Is.EqualTo(1), "the cursor should be on row 1");
+
+            control.Height = 12.5 * cell;
+            window.UpdateLayout();
+            Assume.That(view.Terminal.Rows, Is.EqualTo(12), "the grid should have shrunk to 12 rows");
+
+            var bar = ScrollBarOf(control);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(control.MaxScrollback, Is.EqualTo(0),
+                    $"nothing scrolled off the top. observed MaxScrollback={control.MaxScrollback} "
+                    + $"Buffer.Length={view.Terminal.Buffer.Length} YBase={view.Terminal.Buffer.YBase}");
+                Assert.That(bar.Maximum, Is.EqualTo(0), $"no range to offer. observed Maximum={bar.Maximum}");
+                Assert.That(bar.IsEnabled, Is.False, "and nothing to drag");
+            });
+        }
+        finally
+        {
+            window.Close();
+        }
+    }
 }
