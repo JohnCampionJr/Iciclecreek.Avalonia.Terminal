@@ -138,6 +138,103 @@ public class HandoverTests
         finally { w1.Close(); w2.Close(); }
     }
 
+    /// <summary>Pumps the UI thread until <paramref name="condition"/> holds or five seconds pass; the caller asserts.</summary>
+    private static void Await(Func<bool> condition)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromSeconds(5) && !condition())
+        {
+            Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(10);
+        }
+    }
+
+    /// <summary>
+    /// The stale reader wins the race AFTER the new owner attached: the chunk it took still reaches the
+    /// new owner, and ahead of everything the process says after it.
+    /// </summary>
+    /// <remarks>
+    /// <para>This is the case that used to be dropped. Once the new owner attached, its reader joined the
+    /// old one on the same descriptor; whichever woke first took the chunk, and when that was the stale
+    /// one, the chunk could not be handed over without risking reordering, so it went nowhere.</para>
+    /// <para>Staged rather than raced for: <see cref="TurnConnection"/> serves the OLDEST parked read,
+    /// which is the stale view's, since it parked before the detach. What the new owner's reader does
+    /// meanwhile is the fix's business -- before it, a second read parked beside the first; now it waits
+    /// its turn behind the stale one and replays what that one took before reading on.</para>
+    /// </remarks>
+    [AvaloniaTest]
+    public void A_chunk_stolen_after_the_new_owner_attached_reaches_it_in_order()
+    {
+        var (view1, w1) = Realised();
+        var (view2, w2) = Realised();
+        try
+        {
+            var pty = new TurnConnection();
+            view1.AttachConnection(pty);
+            pty.Emit("<before>");
+            Await(() => Text(view1).Contains("<before>") && pty.WaitingReads == 1);
+            Assert.That(Text(view1), Does.Contain("<before>"), "sanity: the first owner's loop is delivering");
+            Assert.That(pty.WaitingReads, Is.EqualTo(1), "sanity: and is parked in its next read");
+
+            view1.DetachConnection();
+            view2.AttachConnection(pty);
+
+            // The stale view's read is the oldest, so it takes this one.
+            pty.Emit("<stolen>");
+            pty.Emit("<after>");
+
+            Await(() => Text(view2).Contains("<after>") && Text(view2).Contains("<stolen>"));
+
+            var shown = Text(view2);
+            Assert.That(shown, Does.Contain("<stolen>"), "the chunk the stale reader took must reach the new owner, not be dropped");
+            Assert.That(shown.IndexOf("<stolen>", StringComparison.Ordinal),
+                Is.LessThan(shown.IndexOf("<after>", StringComparison.Ordinal)),
+                "and ahead of what the process said after it");
+            Assert.That(Text(view1), Does.Not.Contain("<stolen>"), "the detached view must not have painted it");
+        }
+        finally { w1.Close(); w2.Close(); }
+    }
+
+    /// <summary>
+    /// A detached view is not kept alive by its blocking reader, which stays parked until the process
+    /// next speaks.
+    /// </summary>
+    /// <remarks>
+    /// That can be indefinitely at an idle prompt, and it used to hold the view -- and with it the
+    /// emulator and the whole scrollback -- for all of that time, because the parked loop was an
+    /// instance method of the view. Now the loop reaches its view only through a lease the detach
+    /// revokes.
+    /// </remarks>
+    [AvaloniaTest]
+    public void A_detached_view_is_not_kept_alive_by_its_parked_reader()
+    {
+        var pty = new TurnConnection();
+        var view = AttachThenDetach(pty);
+
+        for (var i = 0; i < 5 && view.IsAlive; i++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        Assert.That(pty.WaitingReads, Is.EqualTo(1), "sanity: the stale reader is still parked, which is the case under test");
+        Assert.That(view.IsAlive, Is.False, "the parked reader is keeping the detached view alive");
+
+        pty.Emit("unpark");   // let the stale reader finish rather than leak a parked thread into the fixture
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static WeakReference AttachThenDetach(TurnConnection pty)
+    {
+        var view = new TerminalView { Process = "" };
+        view.AttachConnection(pty);
+        Await(() => pty.WaitingReads == 1);
+        Assert.That(pty.WaitingReads, Is.EqualTo(1), "sanity: the reader parked in its first read");
+        view.DetachConnection();
+        return new WeakReference(view);
+    }
+
     // ---- a view's own spawn: UseAsyncIo -------------------------------------------------------
 
     /// <summary>
