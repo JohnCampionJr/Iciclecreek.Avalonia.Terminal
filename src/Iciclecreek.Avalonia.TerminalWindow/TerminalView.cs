@@ -3958,7 +3958,7 @@ namespace Iciclecreek.Terminal
                     text = GraphemeRuns.AbsorbJoinedCells(line, _terminal.Cols, cell, text, ref x, ref cellCount);
 
                 var background = cell.GetBackgroundBrush(_palette, this.Background);
-                var foreground = cell.GetForegroundBrush(_palette, this.Foreground, _boldIsBright, _faintOpacity);
+                var foreground = cell.GetForegroundBrush(_palette, this.Foreground, _boldIsBright, faintOpacity: 1.0);
                 // Apply cell-level inverse attribute
                 // Whether this run ends up drawn with the colours swapped. Once they are, the fill is no
                 // longer optional: the "background" being painted is the text colour.
@@ -3999,6 +3999,8 @@ namespace Iciclecreek.Terminal
                 //
                 // Applied AFTER the swaps above -- see ApplyConceal, where the ordering is the
                 // substance of it rather than a detail.
+                // Faint after the swaps too: it dims the glyph, never the fill. See ApplyFaint.
+                foreground = cell.ApplyFaint(foreground, _faintOpacity);
                 foreground = cell.ApplyConceal(foreground);
                 foreground = cell.ApplyBlinkPhase(foreground, this._cursorBlinkOn);
 
