@@ -48,6 +48,21 @@ namespace Iciclecreek.Terminal
         }
 
         /// <summary>
+        /// Whether the application has locked the keyboard with Keyboard Action Mode (KAM, <c>CSI 2 h</c>).
+        /// </summary>
+        /// <remarks>
+        /// <para>The emulator gates its own generators (key, char and Kitty input, and
+        /// <c>Terminal.Paste</c>), but a good deal of what the keyboard sends is encoded here: Win32
+        /// input records, AltGr and composed characters, IME commits, the classic paste, the
+        /// selection deletion and the word-motion aliases. Each keyboard entry point asks this before
+        /// it encodes anything, so all of those are dropped too.</para>
+        /// <para>Read at the moment of encoding: the emulator raises no event when the lock changes.
+        /// Only the KEYBOARD is locked, as in xterm. Mouse reports, focus events and the emulator's
+        /// replies keep flowing, which is why this is not a check inside <c>SendToPtyAsync</c>.</para>
+        /// </remarks>
+        private bool IsKeyboardLocked => _terminal?.KeyboardLocked == true;
+
+        /// <summary>
         /// Sends text to the running process, exactly as if it had been typed at the keyboard.
         /// </summary>
         /// <param name="text">The text to send. Sent verbatim — see the remarks about Enter.</param>
@@ -61,6 +76,9 @@ namespace Iciclecreek.Terminal
         /// process has already exited. Writes are serialised against the view's own keyboard input, so
         /// injected text cannot interleave with a keystroke mid-sequence.</para>
         /// <para>Safe to call from any thread: it touches no Avalonia properties.</para>
+        /// <para>Not subject to Keyboard Action Mode. An application that sends <c>CSI 2 h</c> locks the
+        /// USER's keyboard; this is the host's own channel to the process, and a host that wants to
+        /// honour the lock can check <c>Terminal.KeyboardLocked</c> before calling.</para>
         /// <para>Requested in #19, where the workaround in the wild was reflection over this type's private
         /// members — which is its own argument for the method existing.</para>
         /// </remarks>
@@ -70,6 +88,10 @@ namespace Iciclecreek.Terminal
         /// <summary>
         /// Pastes text from the clipboard into the terminal.
         /// </summary>
+        /// <remarks>
+        /// Does nothing while the application has locked the keyboard (KAM): a paste is typing, and the
+        /// emulator's own <c>Terminal.Paste</c> declines it for the same reason.
+        /// </remarks>
         public async Task PasteAsync()
         {
             if (_ptyConnection == null)
@@ -88,7 +110,9 @@ namespace Iciclecreek.Terminal
             if (_terminal.PasteNotificationMode)
             {
                 var paste = await BuildPasteAsync(clipboard);
-                if (paste is null)
+                // Asked after the clipboard read, at the moment of sending: the lock can arrive while
+                // the read is awaited. Terminal.Paste declines by itself, but the deletion is ours.
+                if (paste is null || IsKeyboardLocked)
                     return;
 
                 // An announced paste REPLACES a selection too, exactly as the classic path below does:
@@ -105,7 +129,8 @@ namespace Iciclecreek.Terminal
             }
 
             var text = await clipboard.TryGetTextAsync();
-            if (!string.IsNullOrEmpty(text))
+            // After the clipboard read, for the same reason as the announced path.
+            if (!string.IsNullOrEmpty(text) && !IsKeyboardLocked)
             {
                 // Wrap paste in bracketed paste sequences if mode is enabled
                 if (_terminal.BracketedPasteMode)
@@ -430,9 +455,15 @@ namespace Iciclecreek.Terminal
         /// the anchor to be where the shell's cursor actually is, because the deletion is expressed as
         /// keystrokes from there — so the cursor is moved to the end of the input first, which is where a
         /// select-all leaves the caret in any editor anyway.</para>
+        /// <para>False, and nothing selected, while the application has locked the keyboard (KAM): the
+        /// move to the end of the input cannot be sent, and a selection anchored where the cursor was
+        /// never moved would delete the wrong characters once the lock lifts.</para>
         /// </remarks>
         public async Task<bool> SelectInputAsync()
         {
+            if (IsKeyboardLocked)
+                return false;
+
             // Sample the prompt edge if it has not been sampled yet — pressing this before typing anything
             // is a perfectly ordinary thing to do, and the cursor is sitting on the answer.
             NoteInputStart();
@@ -503,6 +534,16 @@ namespace Iciclecreek.Terminal
             if (ptyConnection == null || _processExitHandled != 0)
             {
                 base.OnKeyUp(e);
+                return;
+            }
+
+            // A locked keyboard sends no releases either -- Win32 records are encoded here, not by the
+            // emulator. The key is no longer held whether or not its release was reported, or its
+            // next press after the lock lifts would be reported to Kitty as a repeat.
+            if (IsKeyboardLocked)
+            {
+                _keysHeld.Remove((e.PhysicalKey, e.Key));
+                _win32RecordSentForThisStroke = false;
                 return;
             }
 
