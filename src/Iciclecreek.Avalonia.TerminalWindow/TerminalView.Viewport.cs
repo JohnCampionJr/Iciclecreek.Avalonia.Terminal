@@ -144,18 +144,145 @@ namespace Iciclecreek.Terminal
         /// Searches the scrollback and highlights every match.
         /// </summary>
         /// <remarks>
-        /// Cheap enough to call per keystroke -- measured at 3.7 ms over 10,000 lines, allocating
+        /// <para>Cheap enough to call per keystroke -- measured at 3.7 ms over 10,000 lines, allocating
         /// nothing -- so a find box can search as the user types and leave debouncing for buffers
-        /// large enough to need it.
+        /// large enough to need it.</para>
+        /// <para>Holds the terminal lock for the whole scan, so output waits for it too. At about
+        /// 0.2 µs a row that is 21 ms over 100,000 lines and 210 ms over a million; for scrollback that
+        /// size, <see cref="FindInBufferAsync"/> searches off the UI thread instead. Cancels a search
+        /// that one has in flight.</para>
         /// </remarks>
         /// <returns>How many matches, capped at <see cref="XT.Search.BufferSearch.MaxHits"/>.</returns>
         public int FindInBuffer(string needle, XT.Search.SearchOptions options = default)
         {
-            _search ??= new XT.Search.BufferSearch(_terminal);
-            var count = _search.Find(needle, options);
+            CancelSearchInFlight();
+
+            // Under the lock because the reader writes under it: Find walks the rows the reader is
+            // rewriting, and without the lock a search during output read lines mid-write. The UI
+            // thread already takes this lock (ClearScreen, CurrentLineText), and the reader never
+            // waits on the UI thread unbounded while holding it, so this cannot deadlock.
+            int count;
+            lock (_terminalLock)
+            {
+                _search ??= new XT.Search.BufferSearch(_terminal);
+                count = _search.Find(needle, options);
+            }
+
             _currentMatchId = -1;
             InvalidateVisual();
             return count;
+        }
+
+        /// <summary>
+        /// Searches the scrollback off the UI thread, and highlights every match once it is done.
+        /// </summary>
+        /// <remarks>
+        /// <para>For scrollback too large for <see cref="FindInBuffer"/>: this runs on the thread pool,
+        /// holding the terminal lock for 4,096 rows at a time (about a millisecond) and letting go in
+        /// between, so the reader waits at most one slice and the UI thread never waits at all.</para>
+        /// <para>Output keeps arriving while it runs. Lines trimmed off the top mid-scan shift what was
+        /// already found, and a switch to or from the alternate screen or a resize starts the scan
+        /// again, since the rows it had no longer mean what they did.</para>
+        /// <para>The result replaces the current one on the UI thread, leaving it as
+        /// <see cref="FindInBuffer"/> would: <see cref="SearchHitCount"/>, <see cref="SearchTruncated"/>,
+        /// and no match chosen. A newer search of either kind, <see cref="ClearSearch"/>, or the view
+        /// unloading cancels it, and a cancelled search publishes nothing. Call it on the UI thread.</para>
+        /// </remarks>
+        /// <returns>How many matches, capped at <see cref="XT.Search.BufferSearch.MaxHits"/>. Cancelled
+        /// when superseded, cleared, or <paramref name="cancellationToken"/> fires first.</returns>
+        public Task<int> FindInBufferAsync(string needle, XT.Search.SearchOptions options = default,
+                                           CancellationToken cancellationToken = default)
+        {
+            CancelSearchInFlight();
+
+            // Under the lock like FindInBuffer's, so the search ties itself to the buffer as it stands
+            // rather than mid-write.
+            XT.Search.BufferSearch search;
+            lock (_terminalLock)
+                search = _search ??= new XT.Search.BufferSearch(_terminal);
+
+            var inFlight = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _searchInFlight = inFlight;
+            return FindInSlicesAsync(search, needle ?? string.Empty, options, inFlight);
+        }
+
+        /// <summary>Rows <see cref="FindInBufferAsync"/> searches per hold of the terminal lock.</summary>
+        internal const int SearchSliceRows = 4096;
+
+        /// <summary>
+        /// Test seam: raised on the scanning thread after each slice of <see cref="FindInBufferAsync"/>,
+        /// with the terminal lock released. The argument says whether that slice was the last.
+        /// </summary>
+        internal Action<bool>? SearchSliceScanned;
+
+        /// <summary>The <see cref="FindInBufferAsync"/> still allowed to publish. UI thread only.</summary>
+        private CancellationTokenSource? _searchInFlight;
+
+        private async Task<int> FindInSlicesAsync(XT.Search.BufferSearch search, string needle,
+                                                  XT.Search.SearchOptions options, CancellationTokenSource inFlight)
+        {
+            var token = inFlight.Token;
+            var scan = await Task.Run(() => ScanInSlices(search, needle, options, token), token).ConfigureAwait(false);
+
+            // No cancellation check between the last slice and here: the one that counts is on the UI
+            // thread, where a newer search or a clear can no longer slip in behind it.
+            var count = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!ReferenceEquals(_searchInFlight, inFlight) || !ReferenceEquals(_search, search)
+                    || inFlight.IsCancellationRequested)
+                    return (int?)null;
+
+                _searchInFlight = null;
+                inFlight.Dispose();
+
+                search.Apply(scan);
+                _currentMatchId = -1;
+                InvalidateVisual();
+                return search.Count;
+            });
+
+            return count ?? throw new OperationCanceledException(token);
+        }
+
+        /// <summary>
+        /// Steps a scan a slice at a time, holding the terminal lock only for each slice. The scan
+        /// keeps its own hits and position in step with lines trimmed between slices.
+        /// </summary>
+        private XT.Search.BufferScan ScanInSlices(XT.Search.BufferSearch search, string needle,
+                                                  XT.Search.SearchOptions options, CancellationToken token)
+        {
+            var scan = search.BeginScan(needle, options);
+
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+
+                XT.Search.BufferScanStatus status;
+                lock (_terminalLock)
+                    status = scan.Next(SearchSliceRows);
+
+                // The screen switched or the buffer was resized between slices, so the rows found so
+                // far no longer mean what they did. Start over on the buffer there is now.
+                if (status == XT.Search.BufferScanStatus.Invalidated)
+                    scan = search.BeginScan(needle, options);
+
+                var last = status is XT.Search.BufferScanStatus.Done or XT.Search.BufferScanStatus.Truncated;
+                SearchSliceScanned?.Invoke(last);
+
+                if (last)
+                    return scan;
+            }
+        }
+
+        private void CancelSearchInFlight()
+        {
+            var inFlight = _searchInFlight;
+            if (inFlight is null)
+                return;
+
+            _searchInFlight = null;
+            inFlight.Cancel();
+            inFlight.Dispose();
         }
 
         /// <summary>Moves to the next match and scrolls it into view. Wraps at the end.</summary>
@@ -164,9 +291,10 @@ namespace Iciclecreek.Terminal
         /// <summary>Moves to the previous match and scrolls it into view. Wraps at the start.</summary>
         public bool FindPrevious() => MoveSearch(next: false);
 
-        /// <summary>Forgets the search and removes the highlights.</summary>
+        /// <summary>Forgets the search and removes the highlights, cancelling one still running.</summary>
         public void ClearSearch()
         {
+            CancelSearchInFlight();
             _search?.Clear();
             _currentMatchId = -1;
             InvalidateVisual();
